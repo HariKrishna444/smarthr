@@ -1,0 +1,1980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SmartHR v2 – AI-Powered HR Portal</title>
+
+<!-- ===== FIREBASE SDK ===== -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
+  import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-analytics.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updateProfile }
+    from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
+  import { getFirestore, collection, doc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy }
+    from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDAqfDNQUGqMuSHvRW0sYeiJSPiKabuuXU",
+    authDomain: "smarthr-hrportal.firebaseapp.com",
+    projectId: "smarthr-hrportal",
+    storageBucket: "smarthr-hrportal.firebasestorage.app",
+    messagingSenderId: "651086919871",
+    appId: "1:651086919871:web:b8d308dbfed37e14c52e0a",
+    measurementId: "G-EZ0F225F2X"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Track page view
+  logEvent(analytics, 'page_view', { page_title: 'SmartHR Portal' });
+
+  // Expose globally for non-module scripts
+  window._firebaseApp = app;
+  window._firebaseAuth = auth;
+  window._firebaseDB = db;
+  window._firebaseAnalytics = analytics;
+  window._firebaseFn = {
+    signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updateProfile,
+    collection, doc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy,
+    logEvent
+  };
+
+  // Auth state observer
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      window._currentUser = user;
+      const displayName = user.displayName || user.email.split('@')[0];
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app-shell').style.display = 'flex';
+      document.getElementById('topbar-user-name').textContent = displayName;
+      document.getElementById('sidebar-user-name').textContent = displayName;
+      document.getElementById('portal-user-name').textContent = displayName;
+      // Log login event
+      logEvent(analytics, 'login', { method: 'email' });
+      loadFirestoreEmployees();
+    } else {
+      window._currentUser = null;
+      document.getElementById('login-screen').style.display = 'flex';
+      document.getElementById('app-shell').style.display = 'none';
+    }
+  });
+
+  // Load employees from Firestore (falls back to local data)
+  async function loadFirestoreEmployees() {
+    try {
+      const snap = await getDocs(collection(db, 'employees'));
+      if (!snap.empty) {
+        window.empData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+        renderEmp(window.empData);
+      }
+    } catch(e) { /* use local data */ }
+  }
+
+  // Firebase Auth handlers
+  window.firebaseLogin = async (email, password) => {
+    return signInWithEmailAndPassword(auth, email, password);
+  };
+  window.firebaseLogout = () => signOut(auth);
+
+  // Firestore CRUD
+  window.firestoreAddEmployee = (data) => addDoc(collection(db, 'employees'), {...data, createdAt: serverTimestamp()});
+  window.firestoreUpdateEmployee = (id, data) => updateDoc(doc(db, 'employees', id), data);
+  window.firestoreDeleteEmployee = (id) => deleteDoc(doc(db, 'employees', id));
+</script>
+
+<!-- jsPDF for PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --navy: #0A1628; --navy2: #0F2040; --navy3: #0D1C38;
+  --accent: #1D9E75; --accent2: #5DCAA5; --accent-light: #E1F5EE;
+  --gold: #EF9F27; --gold-light: #FAEEDA;
+  --coral: #D85A30; --coral-light: #FAECE7;
+  --blue: #378ADD; --blue-light: #E6F1FB;
+  --purple: #7F77DD; --purple-light: #EEEDFE;
+  --red: #E24B4A; --red-light: #FCEBEB;
+  --border: rgba(255,255,255,0.08);
+  --text-muted: rgba(255,255,255,0.45);
+  --text-dim: rgba(255,255,255,0.72);
+  --card-bg: rgba(255,255,255,0.04);
+  --card-hover: rgba(255,255,255,0.07);
+  --sidebar-w: 224px;
+}
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--navy); color: #fff; min-height: 100vh; }
+
+/* ===== LOGIN SCREEN ===== */
+#login-screen {
+  position: fixed; inset: 0; background: var(--navy);
+  display: flex; align-items: center; justify-content: center; z-index: 9999;
+}
+.login-card {
+  background: var(--navy2); border: 1px solid var(--border); border-radius: 16px;
+  padding: 40px; width: 400px; max-width: 95vw;
+}
+.login-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
+.login-logo-icon {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800;
+}
+.login-title { font-size: 20px; font-weight: 700; }
+.login-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.login-tabs { display: flex; gap: 4px; margin-bottom: 24px; background: rgba(255,255,255,0.05); border-radius: 9px; padding: 4px; }
+.login-tab {
+  flex: 1; text-align: center; padding: 8px; border-radius: 7px;
+  font-size: 13px; cursor: pointer; color: var(--text-muted); transition: all 0.15s;
+}
+.login-tab.active { background: var(--navy); color: #fff; font-weight: 600; }
+.form-group { margin-bottom: 16px; }
+.form-label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; display: block; }
+.form-input {
+  width: 100%; background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+  border-radius: 9px; padding: 10px 14px; color: #fff; font-size: 13px; outline: none;
+  transition: border-color 0.15s;
+}
+.form-input:focus { border-color: var(--accent); }
+.form-select { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; color: #fff; font-size: 13px; outline: none; }
+.form-select option { background: var(--navy2); }
+.btn-primary {
+  width: 100%; background: var(--accent); border: none; color: #fff;
+  border-radius: 9px; padding: 12px; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s; margin-top: 8px;
+}
+.btn-primary:hover { background: #15865f; }
+.btn-secondary {
+  background: rgba(255,255,255,0.07); border: 1px solid var(--border); color: var(--text-dim);
+  border-radius: 9px; padding: 8px 18px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+}
+.btn-secondary:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.btn-danger {
+  background: rgba(226,75,74,0.2); border: 1px solid rgba(226,75,74,0.3); color: #f87171;
+  border-radius: 9px; padding: 8px 18px; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.login-error { background: rgba(226,75,74,0.15); border: 1px solid rgba(226,75,74,0.3); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #f87171; margin-top: 12px; display: none; }
+.demo-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 16px; line-height: 1.5; }
+
+/* ===== APP SHELL ===== */
+#app-shell { display: none; min-height: 100vh; }
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+  width: var(--sidebar-w); min-height: 100vh; background: var(--navy2);
+  border-right: 1px solid var(--border); display: flex; flex-direction: column;
+  position: fixed; top: 0; left: 0; z-index: 100;
+}
+.logo { padding: 20px 18px 16px; border-bottom: 1px solid var(--border); }
+.logo-mark { display: flex; align-items: center; gap: 10px; }
+.logo-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800; color: #fff; flex-shrink: 0;
+}
+.logo-name { font-size: 17px; font-weight: 700; letter-spacing: -0.4px; }
+.logo-sub { font-size: 10px; color: var(--text-muted); letter-spacing: 0.9px; text-transform: uppercase; margin-top: 1px; }
+.nav { padding: 14px 10px; flex: 1; overflow-y: auto; }
+.nav-section { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); padding: 8px 10px 4px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+  border-radius: 9px; cursor: pointer; font-size: 13px; color: var(--text-dim);
+  margin-bottom: 2px; transition: background 0.15s, color 0.15s; position: relative; user-select: none;
+}
+.nav-item:hover { background: var(--card-hover); color: #fff; }
+.nav-item.active { background: rgba(29,158,117,0.18); color: var(--accent2); font-weight: 600; }
+.nav-item.active::before {
+  content: ''; position: absolute; left: 0; top: 6px; bottom: 6px;
+  width: 3px; background: var(--accent); border-radius: 0 3px 3px 0;
+}
+.nav-icon { font-size: 16px; width: 18px; text-align: center; }
+.nav-badge { margin-left: auto; background: var(--coral); color: #fff; font-size: 10px; padding: 1px 7px; border-radius: 10px; font-weight: 700; }
+.sidebar-footer { padding: 12px 10px; border-top: 1px solid var(--border); }
+.user-pill { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; cursor: pointer; }
+.user-pill:hover { background: var(--card-hover); }
+.avatar-sm {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--purple), var(--blue));
+  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;
+}
+.u-name { font-size: 13px; font-weight: 600; }
+.u-role { font-size: 11px; color: var(--text-muted); }
+
+/* ===== MAIN ===== */
+.main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(10,22,40,0.92); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.tb-title { font-size: 19px; font-weight: 700; letter-spacing: -0.4px; }
+.tb-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.tb-right { display: flex; align-items: center; gap: 10px; }
+.icon-btn {
+  width: 36px; height: 36px; border-radius: 9px; border: 1px solid var(--border);
+  background: var(--card-bg); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 16px; color: var(--text-dim); transition: all 0.15s; position: relative;
+}
+.icon-btn:hover { background: var(--card-hover); color: #fff; }
+.notif-count {
+  position: absolute; top: -5px; right: -5px; background: var(--coral); color: #fff;
+  font-size: 9px; font-weight: 700; width: 16px; height: 16px;
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--navy);
+}
+.content { padding: 28px; flex: 1; }
+.panel { display: none; animation: fadeUp 0.22s ease; }
+.panel.active { display: block; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ===== NOTIFICATION DROPDOWN ===== */
+.notif-dropdown {
+  position: absolute; top: 54px; right: 28px; width: 340px;
+  background: var(--navy2); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5); z-index: 200; display: none;
+}
+.notif-dropdown.open { display: block; }
+.notif-head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.notif-head span { font-size: 14px; font-weight: 600; }
+.notif-item { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+.notif-item:hover { background: var(--card-hover); }
+.notif-item:last-child { border-bottom: none; }
+.notif-item-title { font-size: 13px; font-weight: 500; margin-bottom: 3px; }
+.notif-item-time { font-size: 11px; color: var(--text-muted); }
+.notif-item.unread { border-left: 3px solid var(--accent); }
+
+/* ===== MODAL ===== */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  z-index: 500; display: none; align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--navy2); border: 1px solid var(--border); border-radius: 16px;
+  padding: 28px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
+  animation: fadeUp 0.2s ease;
+}
+.modal-wide { width: 700px; }
+.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+.modal-title { font-size: 16px; font-weight: 700; }
+.modal-close { cursor: pointer; font-size: 20px; color: var(--text-muted); background: none; border: none; color: var(--text-muted); }
+.modal-close:hover { color: #fff; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
+/* ===== SHARED COMPONENTS ===== */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+.stat-3 { grid-template-columns: repeat(3, 1fr); }
+.stat-card {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px 18px; cursor: pointer; transition: background 0.2s, transform 0.2s;
+}
+.stat-card:hover { background: var(--card-hover); transform: translateY(-2px); }
+.s-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 10px; }
+.s-num { font-size: 30px; font-weight: 700; letter-spacing: -1px; margin-bottom: 6px; }
+.s-change { font-size: 12px; }
+.s-icon { float: right; font-size: 22px; opacity: 0.55; margin-top: -2px; }
+.up { color: var(--accent2); } .dn { color: var(--coral); } .nm { color: var(--text-muted); }
+
+.card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.card-title { font-size: 14px; font-weight: 600; }
+.two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+.two-eq { grid-template-columns: 1fr 1fr; }
+
+.badge { font-size: 11px; padding: 3px 11px; border-radius: 20px; font-weight: 500; }
+.bg { background: rgba(29,158,117,0.18); color: var(--accent2); }
+.bb { background: rgba(55,138,221,0.18); color: var(--blue); }
+.bo { background: rgba(239,159,39,0.18); color: var(--gold); }
+.br { background: rgba(226,75,74,0.2); color: #f87171; }
+.bp { background: rgba(127,119,221,0.18); color: var(--purple); }
+.pill { font-size: 10px; padding: 3px 9px; border-radius: 20px; font-weight: 600; display: inline-block; white-space: nowrap; }
+.pill-g { background: rgba(29,158,117,0.18); color: var(--accent2); }
+.pill-o { background: rgba(239,159,39,0.18); color: var(--gold); }
+.pill-r { background: rgba(226,75,74,0.2); color: #f87171; }
+.pill-b { background: rgba(55,138,221,0.18); color: var(--blue); }
+.pill-p { background: rgba(127,119,221,0.18); color: var(--purple); }
+
+.bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 11px; font-size: 13px; }
+.bar-label { width: 95px; color: var(--text-dim); flex-shrink: 0; font-size: 12px; }
+.bar-wrap { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 10px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 10px; }
+.bar-val { width: 38px; text-align: right; font-size: 12px; color: var(--text-muted); }
+
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th { text-align: left; padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+.tbl td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text-dim); vertical-align: middle; }
+.tbl tr:hover td { background: var(--card-hover); }
+.tbl tr:last-child td { border-bottom: none; }
+
+.act-item { display: flex; align-items: flex-start; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.act-item:last-child { border-bottom: none; }
+.act-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.act-text { font-size: 13px; color: var(--text-dim); flex: 1; line-height: 1.4; }
+.act-time { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+.funnel-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+.funnel-label { width: 115px; font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+.funnel-wrap { flex: 1; height: 22px; background: rgba(255,255,255,0.05); border-radius: 5px; overflow: hidden; }
+.funnel-fill { height: 100%; border-radius: 5px; display: flex; align-items: center; padding-left: 8px; font-size: 11px; font-weight: 600; }
+.funnel-count { width: 30px; text-align: right; font-size: 11px; color: var(--text-muted); }
+
+.pay-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 13px; }
+.pay-row:last-child { border-bottom: none; }
+.pay-label { color: var(--text-dim); }
+.pay-val { font-weight: 600; }
+.pos { color: var(--accent2); } .neg { color: var(--coral); }
+
+.ai-chat { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px; height: 300px; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.msg { max-width: 82%; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.55; }
+.msg-bot { background: rgba(29,158,117,0.14); color: var(--accent2); border: 1px solid rgba(29,158,117,0.2); align-self: flex-start; }
+.msg-user { background: rgba(55,138,221,0.14); color: #a8d4f5; border: 1px solid rgba(55,138,221,0.2); align-self: flex-end; }
+.msg-typing { display: flex; gap: 4px; align-items: center; padding: 10px 14px; }
+.msg-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent2); animation: bounce 0.9s infinite; }
+.msg-typing span:nth-child(2) { animation-delay: 0.2s; }
+.msg-typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+.ai-input-row { display: flex; gap: 10px; }
+.ai-input { flex: 1; background: var(--card-bg); border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; color: #fff; font-size: 13px; outline: none; }
+.ai-input:focus { border-color: var(--accent); }
+.ai-send { background: var(--accent); border: none; color: #fff; border-radius: 9px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+.ai-send:hover { background: #15865f; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip { background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 20px; padding: 5px 14px; font-size: 12px; cursor: pointer; color: var(--text-dim); transition: all 0.15s; }
+.chip:hover { background: rgba(29,158,117,0.14); border-color: var(--accent); color: var(--accent2); }
+
+.drop-zone { border: 2px dashed rgba(255,255,255,0.14); border-radius: 10px; padding: 32px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 16px; }
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(29,158,117,0.06); }
+.drop-icon { font-size: 32px; margin-bottom: 10px; }
+.drop-label { font-size: 13px; color: var(--text-muted); }
+
+.ticket-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+.ticket-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.ticket-title { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+.ticket-meta { font-size: 11px; color: var(--text-muted); }
+.ticket-badges { display: flex; gap: 8px; align-items: center; }
+
+.ann-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.ann-item:last-child { border-bottom: none; }
+.ann-ico { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.ann-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.ann-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+.emp-av { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.emp-name-cell { display: flex; align-items: center; gap: 10px; }
+
+.search-bar { display: flex; align-items: center; gap: 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 9px; padding: 8px 14px; margin-bottom: 16px; }
+.search-bar input { background: none; border: none; outline: none; color: #fff; font-size: 13px; flex: 1; }
+.search-bar input::placeholder { color: var(--text-muted); }
+
+.kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.kpi-card { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.kpi-name { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.kpi-score { font-size: 26px; font-weight: 700; }
+.kpi-bar-wrap { height: 4px; background: rgba(255,255,255,0.08); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+.kpi-bar-fill { height: 100%; border-radius: 4px; }
+
+.trend-chart { display: flex; align-items: flex-end; gap: 3px; height: 110px; }
+.tc-bar { flex: 1; border-radius: 3px 3px 0 0; min-height: 4px; }
+.tc-labels { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--text-muted); }
+.progress-ring { transform: rotate(-90deg); }
+
+/* ===== CALENDAR ===== */
+.calendar-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; }
+.cal-head { text-align: center; font-size: 11px; color: var(--text-muted); padding: 6px 0; font-weight: 600; }
+.cal-day {
+  aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 8px; font-size: 13px; cursor: pointer; transition: all 0.15s; position: relative;
+}
+.cal-day:hover { background: var(--card-hover); }
+.cal-day.today { background: rgba(29,158,117,0.2); color: var(--accent2); font-weight: 700; }
+.cal-day.has-event::after { content: ''; position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 50%; background: var(--accent2); }
+.cal-day.other-month { color: var(--text-muted); opacity: 0.4; }
+.cal-day.holiday { background: rgba(239,159,39,0.12); color: var(--gold); }
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.cal-nav-btn { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-dim); border-radius: 7px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.cal-nav-btn:hover { background: var(--card-hover); color: #fff; }
+
+/* ===== SELF-SERVICE PORTAL ===== */
+.portal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+.portal-card {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s;
+}
+.portal-card:hover { background: var(--card-hover); transform: translateY(-2px); border-color: rgba(255,255,255,0.15); }
+.portal-icon { font-size: 28px; margin-bottom: 10px; }
+.portal-label { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.portal-desc { font-size: 11px; color: var(--text-muted); }
+
+/* ===== NOTIFICATIONS PANEL ===== */
+.notif-channels { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 16px; }
+.channel-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; }
+.channel-icon { font-size: 24px; margin-bottom: 8px; }
+.channel-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.channel-status { font-size: 11px; }
+.toggle-switch { position: relative; display: inline-block; width: 44px; height: 22px; margin-top: 10px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; cursor: pointer; inset: 0; background: rgba(255,255,255,0.1); border-radius: 22px; transition: 0.3s; }
+.toggle-slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.3s; }
+input:checked + .toggle-slider { background: var(--accent); }
+input:checked + .toggle-slider::before { transform: translateX(22px); }
+
+/* ===== DOCUMENT GENERATOR ===== */
+.doc-types { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px; }
+.doc-type-card {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px; text-align: center; cursor: pointer; transition: all 0.2s;
+}
+.doc-type-card:hover, .doc-type-card.selected { background: rgba(29,158,117,0.1); border-color: var(--accent); }
+.doc-type-icon { font-size: 26px; margin-bottom: 8px; }
+.doc-type-name { font-size: 13px; font-weight: 600; }
+
+/* loading spinner */
+.spinner { width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.2); border-top-color: var(--accent2); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 9000;
+  background: var(--navy2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 18px; font-size: 13px; display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4); transform: translateY(80px); opacity: 0;
+  transition: all 0.3s ease; max-width: 320px;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-left: 3px solid var(--accent); }
+.toast.error { border-left: 3px solid var(--coral); }
+.toast.info { border-left: 3px solid var(--blue); }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ===== TOAST ===== -->
+<div class="toast" id="toast"><span id="toast-icon">✓</span><span id="toast-msg">Done</span></div>
+
+<!-- ===== LOGIN SCREEN ===== -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">S</div>
+      <div>
+        <div class="login-title">SmartHR</div>
+        <div class="login-sub">AI-POWERED HR PORTAL v2</div>
+      </div>
+    </div>
+    <div class="login-tabs">
+      <div class="login-tab active" onclick="switchLoginTab('login')">Sign In</div>
+      <div class="login-tab" onclick="switchLoginTab('register')">Register</div>
+    </div>
+    <!-- Sign In -->
+    <div id="tab-login">
+      <div class="form-group">
+        <label class="form-label">Email Address</label>
+        <input class="form-input" id="login-email" type="email" placeholder="admin@smarthr.com" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" id="login-password" type="password" placeholder="••••••••" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Role</label>
+        <select class="form-select" id="login-role">
+          <option value="admin">HR Admin</option>
+          <option value="manager">Manager</option>
+          <option value="employee">Employee (Self-Service)</option>
+        </select>
+      </div>
+      <button class="btn-primary" onclick="handleLogin()">Sign In to SmartHR</button>
+      <div class="login-error" id="login-error"></div>
+      <div class="demo-hint">
+        <strong>Demo Mode:</strong> Enter any email &amp; password to explore.<br>
+        Firebase Auth will be active once you add your API keys.
+      </div>
+    </div>
+    <!-- Register -->
+    <div id="tab-register" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input class="form-input" id="reg-name" type="text" placeholder="Aarav Mehta" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email Address</label>
+        <input class="form-input" id="reg-email" type="email" placeholder="you@company.com" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" id="reg-password" type="password" placeholder="Min 6 characters" />
+      </div>
+      <button class="btn-primary" onclick="handleRegister()">Create Account</button>
+      <div class="login-error" id="reg-error"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== APP SHELL ===== -->
+<div id="app-shell">
+
+<!-- Notification Dropdown -->
+<div class="notif-dropdown" id="notif-dropdown">
+  <div class="notif-head">
+    <span>Notifications</span>
+    <span style="font-size:11px;color:var(--text-muted);cursor:pointer" onclick="markAllRead()">Mark all read</span>
+  </div>
+  <div id="notif-list"></div>
+</div>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">
+      <div class="logo-icon">S</div>
+      <div>
+        <div class="logo-name">SmartHR</div>
+        <div class="logo-sub">AI-Powered Portal</div>
+      </div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-section">Core HR</div>
+    <div class="nav-item active" data-panel="dashboard"><span class="nav-icon">📊</span> Dashboard</div>
+    <div class="nav-item" data-panel="employees"><span class="nav-icon">👥</span> Employees</div>
+    <div class="nav-item" data-panel="attendance"><span class="nav-icon">📅</span> Attendance</div>
+    <div class="nav-item" data-panel="leave"><span class="nav-icon">🌴</span> Leave Mgmt <span class="nav-badge">7</span></div>
+    <div class="nav-item" data-panel="payroll"><span class="nav-icon">💰</span> Payroll</div>
+    <div class="nav-section">Talent</div>
+    <div class="nav-item" data-panel="recruitment"><span class="nav-icon">🎯</span> Recruitment</div>
+    <div class="nav-item" data-panel="performance"><span class="nav-icon">⭐</span> Performance</div>
+    <div class="nav-section">AI & Tools</div>
+    <div class="nav-item" data-panel="ai"><span class="nav-icon">🤖</span> AI Assistant</div>
+    <div class="nav-item" data-panel="documents"><span class="nav-icon">📄</span> Documents</div>
+    <div class="nav-item" data-panel="calendar"><span class="nav-icon">🗓️</span> Calendar</div>
+    <div class="nav-section">Self-Service</div>
+    <div class="nav-item" data-panel="selfservice"><span class="nav-icon">👤</span> My Portal</div>
+    <div class="nav-item" data-panel="notifications"><span class="nav-icon">🔔</span> Notifications</div>
+    <div class="nav-section">Support</div>
+    <div class="nav-item" data-panel="tickets"><span class="nav-icon">🎫</span> Tickets <span class="nav-badge">3</span></div>
+    <div class="nav-item" data-panel="noticeboard"><span class="nav-icon">📌</span> Notice Board</div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-pill" onclick="handleLogout()">
+      <div class="avatar-sm">SA</div>
+      <div>
+        <div class="u-name" id="sidebar-user-name">Admin</div>
+        <div class="u-role">Sign out</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<main class="main">
+  <div class="topbar">
+    <div>
+      <div class="tb-title" id="page-title">Dashboard</div>
+      <div class="tb-sub" id="page-sub">Welcome back! Here's what's happening today.</div>
+    </div>
+    <div class="tb-right">
+      <div class="icon-btn" title="Notifications" onclick="toggleNotif()">🔔<span class="notif-count" id="notif-count">5</span></div>
+      <div class="icon-btn" title="Settings" onclick="go('notifications')">⚙️</div>
+      <div class="avatar-sm" style="cursor:pointer" onclick="go('selfservice')"><span id="topbar-user-name" style="font-size:10px">SA</span></div>
+    </div>
+  </div>
+  <div class="content">
+
+    <!-- ======================== DASHBOARD ======================== -->
+    <div class="panel active" id="panel-dashboard">
+      <div class="stat-grid">
+        <div class="stat-card" onclick="go('employees')">
+          <div class="s-label">Total Employees <span class="s-icon">👥</span></div>
+          <div class="s-num">540</div><div class="s-change up">▲ 12 joined this month</div>
+        </div>
+        <div class="stat-card" onclick="go('attendance')">
+          <div class="s-label">Present Today <span class="s-icon">✅</span></div>
+          <div class="s-num" style="color:var(--accent2)">489</div><div class="s-change nm">90.5% attendance rate</div>
+        </div>
+        <div class="stat-card" onclick="go('leave')">
+          <div class="s-label">Leave Requests <span class="s-icon">🌴</span></div>
+          <div class="s-num" style="color:var(--gold)">24</div><div class="s-change" style="color:var(--gold)">7 pending approval</div>
+        </div>
+        <div class="stat-card" onclick="go('recruitment')">
+          <div class="s-label">Open Positions <span class="s-icon">🎯</span></div>
+          <div class="s-num" style="color:var(--blue)">16</div><div class="s-change up">▲ 4 new this week</div>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Department Headcount</span><span class="badge bg">Live</span></div>
+          <div class="bar-row"><span class="bar-label">Engineering</span><div class="bar-wrap"><div class="bar-fill" style="width:72%;background:var(--blue)"></div></div><span class="bar-val">128</span></div>
+          <div class="bar-row"><span class="bar-label">Sales</span><div class="bar-wrap"><div class="bar-fill" style="width:55%;background:var(--accent)"></div></div><span class="bar-val">96</span></div>
+          <div class="bar-row"><span class="bar-label">HR & Admin</span><div class="bar-wrap"><div class="bar-fill" style="width:28%;background:var(--purple)"></div></div><span class="bar-val">48</span></div>
+          <div class="bar-row"><span class="bar-label">Marketing</span><div class="bar-wrap"><div class="bar-fill" style="width:38%;background:var(--gold)"></div></div><span class="bar-val">64</span></div>
+          <div class="bar-row"><span class="bar-label">Operations</span><div class="bar-wrap"><div class="bar-fill" style="width:46%;background:var(--coral)"></div></div><span class="bar-val">82</span></div>
+          <div class="bar-row"><span class="bar-label">Finance</span><div class="bar-wrap"><div class="bar-fill" style="width:20%;background:var(--accent2)"></div></div><span class="bar-val">36</span></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Recent Activity</span><span class="badge bb">Today</span></div>
+          <div id="activity-feed">
+            <div class="act-item"><div class="act-dot" style="background:var(--accent2)"></div><div class="act-text">Priya Sharma's leave approved by HOD</div><div class="act-time">9:14 am</div></div>
+            <div class="act-item"><div class="act-dot" style="background:var(--blue)"></div><div class="act-text">New applicant for Sr. Dev – AI score 89%</div><div class="act-time">8:52 am</div></div>
+            <div class="act-item"><div class="act-dot" style="background:var(--gold)"></div><div class="act-text">Rajesh raised salary issue ticket #T-2041</div><div class="act-time">8:31 am</div></div>
+            <div class="act-item"><div class="act-dot" style="background:var(--coral)"></div><div class="act-text">3 resignations submitted this week</div><div class="act-time">Yesterday</div></div>
+            <div class="act-item"><div class="act-dot" style="background:var(--purple)"></div><div class="act-text">Payroll processed for October – ₹54.3L</div><div class="act-time">Yesterday</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Hiring Funnel – This Month</span><span class="badge bo">Recruiting</span></div>
+          <div class="funnel-row"><span class="funnel-label">Applied</span><div class="funnel-wrap"><div class="funnel-fill" style="width:100%;background:rgba(55,138,221,0.35);color:#a8d4f5">248</div></div><span class="funnel-count">248</span></div>
+          <div class="funnel-row"><span class="funnel-label">Shortlisted</span><div class="funnel-wrap"><div class="funnel-fill" style="width:63%;background:rgba(127,119,221,0.35);color:#c5c0f5">156</div></div><span class="funnel-count">156</span></div>
+          <div class="funnel-row"><span class="funnel-label">Interview</span><div class="funnel-wrap"><div class="funnel-fill" style="width:38%;background:rgba(239,159,39,0.35);color:#f5c775">94</div></div><span class="funnel-count">94</span></div>
+          <div class="funnel-row"><span class="funnel-label">Selected</span><div class="funnel-wrap"><div class="funnel-fill" style="width:20%;background:rgba(29,158,117,0.4);color:#9FE1CB">48</div></div><span class="funnel-count">48</span></div>
+          <div class="funnel-row"><span class="funnel-label">Joined</span><div class="funnel-wrap"><div class="funnel-fill" style="width:7%;background:rgba(29,158,117,0.6);color:#fff">17</div></div><span class="funnel-count">17</span></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">At a Glance</span></div>
+          <div class="pay-row"><span class="pay-label">Attrition Rate</span><span class="pay-val neg">5.6%</span></div>
+          <div class="pay-row"><span class="pay-label">Avg Tenure</span><span class="pay-val">3.2 yrs</span></div>
+          <div class="pay-row"><span class="pay-label">Monthly Payroll</span><span class="pay-val">₹54.3L</span></div>
+          <div class="pay-row"><span class="pay-label">Interviews Today</span><span class="pay-val pos">16</span></div>
+          <div class="pay-row"><span class="pay-label">AI Risk Alerts</span><span class="pay-val neg">8 employees</span></div>
+          <div class="pay-row"><span class="pay-label">Avg KPI Score</span><span class="pay-val pos">82 / 100</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== EMPLOYEES (CRUD) ======================== -->
+    <div class="panel" id="panel-employees">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div class="search-bar" style="margin-bottom:0;flex:1;margin-right:12px">
+          <span>🔍</span>
+          <input type="text" id="emp-search" placeholder="Search by name, ID, department, designation..." oninput="filterEmployees(this.value)" />
+          <span class="badge bg" id="emp-count-badge">540 total</span>
+        </div>
+        <button class="btn-primary" style="width:auto;padding:10px 18px;margin:0" onclick="openEmpModal()">+ Add Employee</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <table class="tbl">
+          <thead><tr><th>Employee</th><th>ID</th><th>Department</th><th>Designation</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
+          <tbody id="emp-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ======================== ATTENDANCE ======================== -->
+    <div class="panel" id="panel-attendance">
+      <div class="stat-grid stat-3">
+        <div class="stat-card"><div class="s-label">Present Today</div><div class="s-num" style="color:var(--accent2)">489</div><div class="s-change up">90.5% rate</div></div>
+        <div class="stat-card"><div class="s-label">Absent</div><div class="s-num" style="color:var(--coral)">32</div><div class="s-change dn">▼ 5.9%</div></div>
+        <div class="stat-card"><div class="s-label">On Leave</div><div class="s-num" style="color:var(--gold)">19</div><div class="s-change nm">3.5%</div></div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Monthly Attendance Trend</span><span class="badge bg">November 2024</span></div>
+          <div class="trend-chart" id="att-chart"></div>
+          <div class="tc-labels"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30</span></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Dept Attendance %</span></div>
+          <div class="bar-row"><span class="bar-label">HR & Admin</span><div class="bar-wrap"><div class="bar-fill" style="width:96%;background:var(--accent2)"></div></div><span class="bar-val">96%</span></div>
+          <div class="bar-row"><span class="bar-label">Engineering</span><div class="bar-wrap"><div class="bar-fill" style="width:94%;background:var(--blue)"></div></div><span class="bar-val">94%</span></div>
+          <div class="bar-row"><span class="bar-label">Sales</span><div class="bar-wrap"><div class="bar-fill" style="width:88%;background:var(--accent)"></div></div><span class="bar-val">88%</span></div>
+          <div class="bar-row"><span class="bar-label">Marketing</span><div class="bar-wrap"><div class="bar-fill" style="width:82%;background:var(--gold)"></div></div><span class="bar-val">82%</span></div>
+          <div class="bar-row"><span class="bar-label">Operations</span><div class="bar-wrap"><div class="bar-fill" style="width:79%;background:var(--coral)"></div></div><span class="bar-val">79%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== LEAVE ======================== -->
+    <div class="panel" id="panel-leave">
+      <div class="stat-grid stat-3">
+        <div class="stat-card"><div class="s-label">Total Requests</div><div class="s-num">24</div></div>
+        <div class="stat-card"><div class="s-label">Pending</div><div class="s-num" style="color:var(--gold)">7</div></div>
+        <div class="stat-card"><div class="s-label">Approved</div><div class="s-num" style="color:var(--accent2)">14</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">Leave Requests</span><span class="badge bo">Approval Queue</span></div>
+        <table class="tbl">
+          <thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody id="leave-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ======================== PAYROLL ======================== -->
+    <div class="panel" id="panel-payroll">
+      <div class="stat-grid">
+        <div class="stat-card"><div class="s-label">Gross Payroll</div><div class="s-num">₹54.3L</div><div class="s-change nm">October 2024</div></div>
+        <div class="stat-card"><div class="s-label">Net Disbursed</div><div class="s-num" style="color:var(--accent2)">₹46.1L</div><div class="s-change up">▲ On time</div></div>
+        <div class="stat-card"><div class="s-label">Tax Deducted</div><div class="s-num" style="color:var(--gold)">₹5.8L</div><div class="s-change nm">TDS</div></div>
+        <div class="stat-card"><div class="s-label">Bonuses Paid</div><div class="s-num" style="color:var(--blue)">₹2.4L</div><div class="s-change nm">Festival</div></div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Sample Payslip – Aarav Mehta</span><span class="badge bb">EMP-0042</span></div>
+          <div class="pay-row"><span class="pay-label">Basic Salary</span><span class="pay-val pos">+ ₹65,000</span></div>
+          <div class="pay-row"><span class="pay-label">HRA</span><span class="pay-val pos">+ ₹26,000</span></div>
+          <div class="pay-row"><span class="pay-label">Special Allowance</span><span class="pay-val pos">+ ₹12,000</span></div>
+          <div class="pay-row"><span class="pay-label">Performance Bonus</span><span class="pay-val pos">+ ₹8,000</span></div>
+          <div class="pay-row" style="border-top:1px solid var(--border);padding-top:10px"><span class="pay-label">Gross Total</span><span class="pay-val">₹1,11,000</span></div>
+          <div class="pay-row"><span class="pay-label">TDS</span><span class="pay-val neg">− ₹11,200</span></div>
+          <div class="pay-row"><span class="pay-label">Provident Fund</span><span class="pay-val neg">− ₹7,800</span></div>
+          <div class="pay-row" style="border-top:1px solid var(--border);padding-top:12px"><span class="pay-label" style="font-weight:600;color:#fff;font-size:14px">Net Pay</span><span class="pay-val pos" style="font-size:20px">₹92,000</span></div>
+          <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn-secondary" onclick="generatePDF('payslip')">⬇ Download Payslip PDF</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Payroll by Department</span></div>
+          <svg width="100%" viewBox="0 0 180 180" style="display:block;margin:0 auto;max-width:180px">
+            <circle cx="90" cy="90" r="68" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="22"/>
+            <circle cx="90" cy="90" r="68" fill="none" stroke="var(--blue)" stroke-width="22" stroke-dasharray="180 247" class="progress-ring"/>
+            <circle cx="90" cy="90" r="68" fill="none" stroke="var(--accent)" stroke-width="22" stroke-dasharray="95 332" stroke-dashoffset="-180" class="progress-ring"/>
+            <circle cx="90" cy="90" r="68" fill="none" stroke="var(--gold)" stroke-width="22" stroke-dasharray="64 363" stroke-dashoffset="-275" class="progress-ring"/>
+            <circle cx="90" cy="90" r="68" fill="none" stroke="var(--purple)" stroke-width="22" stroke-dasharray="88 339" stroke-dashoffset="-339" class="progress-ring"/>
+            <text x="90" y="86" text-anchor="middle" fill="#fff" font-size="18" font-weight="700">₹54.3L</text>
+            <text x="90" y="102" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="10">Total Payroll</text>
+          </svg>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;justify-content:center;font-size:11px">
+            <span style="display:flex;align-items:center;gap:5px;color:var(--text-dim)"><span style="width:9px;height:9px;border-radius:50%;background:var(--blue);display:inline-block"></span>Engineering 42%</span>
+            <span style="display:flex;align-items:center;gap:5px;color:var(--text-dim)"><span style="width:9px;height:9px;border-radius:50%;background:var(--accent);display:inline-block"></span>Sales 22%</span>
+            <span style="display:flex;align-items:center;gap:5px;color:var(--text-dim)"><span style="width:9px;height:9px;border-radius:50%;background:var(--gold);display:inline-block"></span>Marketing 15%</span>
+            <span style="display:flex;align-items:center;gap:5px;color:var(--text-dim)"><span style="width:9px;height:9px;border-radius:50%;background:var(--purple);display:inline-block"></span>Others 21%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== RECRUITMENT ======================== -->
+    <div class="panel" id="panel-recruitment">
+      <div class="stat-grid">
+        <div class="stat-card"><div class="s-label">Open Positions</div><div class="s-num" style="color:var(--blue)">16</div></div>
+        <div class="stat-card"><div class="s-label">Applications</div><div class="s-num">248</div></div>
+        <div class="stat-card"><div class="s-label">Interviews Today</div><div class="s-num" style="color:var(--gold)">16</div></div>
+        <div class="stat-card"><div class="s-label">Offers Sent</div><div class="s-num" style="color:var(--accent2)">29</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">Active Job Openings – ATS Pipeline</span><span class="badge bb">AI Scoring ON</span></div>
+        <table class="tbl">
+          <thead><tr><th>Role</th><th>Department</th><th>Applied</th><th>Shortlisted</th><th>Current Stage</th><th>AI Match</th></tr></thead>
+          <tbody>
+            <tr><td>Senior React Developer</td><td>Engineering</td><td>62</td><td>18</td><td><span class="pill pill-g">Interview Round</span></td><td style="color:var(--accent2);font-weight:600">89%</td></tr>
+            <tr><td>Data Scientist</td><td>Engineering</td><td>48</td><td>12</td><td><span class="pill pill-o">Shortlisting</span></td><td style="color:var(--accent2);font-weight:600">91%</td></tr>
+            <tr><td>Sales Manager</td><td>Sales</td><td>38</td><td>9</td><td><span class="pill pill-g">Offer Sent</span></td><td style="color:var(--gold);font-weight:600">76%</td></tr>
+            <tr><td>HR Executive</td><td>HR & Admin</td><td>29</td><td>7</td><td><span class="pill pill-o">Screening</span></td><td style="color:var(--gold);font-weight:600">72%</td></tr>
+            <tr><td>Content Strategist</td><td>Marketing</td><td>41</td><td>11</td><td><span class="pill pill-o">Shortlisting</span></td><td style="color:var(--accent2);font-weight:600">83%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ======================== PERFORMANCE ======================== -->
+    <div class="panel" id="panel-performance">
+      <div class="stat-grid stat-3">
+        <div class="stat-card"><div class="s-label">Avg KPI Score</div><div class="s-num" style="color:var(--accent2)">82</div><div class="s-change up">▲ Q3 was 78</div></div>
+        <div class="stat-card"><div class="s-label">At Risk</div><div class="s-num" style="color:var(--coral)">8</div><div class="s-change dn">▼ attrition risk</div></div>
+        <div class="stat-card"><div class="s-label">Appraisal Due</div><div class="s-num" style="color:var(--gold)">47</div><div class="s-change nm">Nov 15</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">Employee KPI Scores – Q4 2024</span><span class="badge bo">Appraisal Cycle</span></div>
+        <div class="kpi-grid" id="kpi-grid"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">Attrition Risk Radar</span><span class="badge br">AI Prediction</span></div>
+        <table class="tbl">
+          <thead><tr><th>Employee</th><th>Department</th><th>Risk Score</th><th>Signal</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(226,75,74,0.2);color:#f87171">RK</div>Rajesh Kumar</div></td><td>Sales</td><td style="color:var(--coral);font-weight:600">87%</td><td style="font-size:12px">Frequent absenteeism</td><td><span class="pill pill-r">Critical</span></td></tr>
+            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(239,159,39,0.2);color:var(--gold)">NP</div>Neha Patel</div></td><td>Engineering</td><td style="color:var(--gold);font-weight:600">64%</td><td style="font-size:12px">Low KPI 2 quarters</td><td><span class="pill pill-o">Monitor</span></td></tr>
+            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(239,159,39,0.2);color:var(--gold)">AS</div>Amit Singh</div></td><td>Operations</td><td style="color:var(--gold);font-weight:600">58%</td><td style="font-size:12px">Salary complaints</td><td><span class="pill pill-o">Monitor</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ======================== AI ASSISTANT ======================== -->
+    <div class="panel" id="panel-ai">
+      <div class="two-col two-eq">
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">🤖 HR AI Chatbot</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="badge bg">GPT-4 Powered</span>
+              <span id="ai-model-info" style="font-size:10px;color:var(--text-muted)">Claude API</span>
+            </div>
+          </div>
+          <div class="ai-chat" id="ai-chat">
+            <div class="msg msg-bot">Hello! I'm SmartHR AI Assistant powered by Claude. Ask me about HR policies, leave balances, payroll, or anything HR-related!</div>
+          </div>
+          <div class="ai-input-row">
+            <input class="ai-input" id="ai-input" placeholder="Ask HR anything..." onkeydown="if(event.key==='Enter')sendAI()" />
+            <button class="ai-send" onclick="sendAI()" id="ai-send-btn">Send ↗</button>
+          </div>
+          <div class="chips">
+            <div class="chip" onclick="askChip('How many casual leave days do I have left?')">🌴 Leave balance</div>
+            <div class="chip" onclick="askChip('What is the maternity leave policy?')">📋 Maternity policy</div>
+            <div class="chip" onclick="askChip('When is the next payroll processing date?')">💰 Payroll date</div>
+            <div class="chip" onclick="askChip('Show my attendance summary for this month')">📅 My attendance</div>
+            <div class="chip" onclick="askChip('What are the WFH policy rules?')">🏠 WFH policy</div>
+            <div class="chip" onclick="askChip('How do I apply for earned leave?')">✉️ Apply leave</div>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:8px">
+            ⚡ Powered by Claude API · Add your API key in config to enable real AI
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">AI Resume Analyzer</span><span class="badge bb">NLP Powered</span></div>
+          <div class="drop-zone" id="resume-drop" onclick="document.getElementById('resume-file').click()"
+            ondragover="event.preventDefault();this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')"
+            ondrop="handleResumeDrop(event)">
+            <div class="drop-icon">📄</div>
+            <div style="font-size:13px;font-weight:500;margin-bottom:6px" id="resume-drop-label">Drop resume or click to upload</div>
+            <div class="drop-label">Supported: PDF, DOCX · Max 5MB</div>
+          </div>
+          <input type="file" id="resume-file" accept=".pdf,.docx,.doc" style="display:none" onchange="analyzeResume(this)" />
+          <div id="resume-result" style="display:none">
+            <div id="resume-analyzing" style="text-align:center;padding:20px;display:none">
+              <div class="spinner"></div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:10px">Analyzing resume with AI...</div>
+            </div>
+            <div id="resume-output"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== DOCUMENTS (PDF GEN) ======================== -->
+    <div class="panel" id="panel-documents">
+      <div class="card">
+        <div class="card-head"><span class="card-title">📄 Document Generator</span><span class="badge bg">PDF Ready</span></div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Generate professional HR documents instantly. Select a document type and fill in the details.</p>
+        <div class="doc-types">
+          <div class="doc-type-card selected" onclick="selectDocType(this,'payslip')">
+            <div class="doc-type-icon">💰</div>
+            <div class="doc-type-name">Payslip</div>
+          </div>
+          <div class="doc-type-card" onclick="selectDocType(this,'offer')">
+            <div class="doc-type-icon">📝</div>
+            <div class="doc-type-name">Offer Letter</div>
+          </div>
+          <div class="doc-type-card" onclick="selectDocType(this,'appointment')">
+            <div class="doc-type-icon">🤝</div>
+            <div class="doc-type-name">Appointment Letter</div>
+          </div>
+        </div>
+        <div id="doc-form-payslip">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" id="pdf-emp-name" value="Aarav Mehta" /></div>
+            <div class="form-group"><label class="form-label">Employee ID</label><input class="form-input" id="pdf-emp-id" value="EMP-0042" /></div>
+            <div class="form-group"><label class="form-label">Department</label><input class="form-input" id="pdf-dept" value="Engineering" /></div>
+            <div class="form-group"><label class="form-label">Month</label><input class="form-input" id="pdf-month" value="October 2024" /></div>
+            <div class="form-group"><label class="form-label">Basic Salary (₹)</label><input class="form-input" id="pdf-basic" value="65000" /></div>
+            <div class="form-group"><label class="form-label">HRA (₹)</label><input class="form-input" id="pdf-hra" value="26000" /></div>
+          </div>
+          <button class="btn-primary" style="width:auto;padding:10px 24px;margin-top:8px" onclick="generatePDF('payslip')">⬇ Generate & Download Payslip PDF</button>
+        </div>
+        <div id="doc-form-offer" style="display:none">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Candidate Name</label><input class="form-input" id="offer-name" placeholder="Rahul Gupta" /></div>
+            <div class="form-group"><label class="form-label">Role</label><input class="form-input" id="offer-role" placeholder="Senior Developer" /></div>
+            <div class="form-group"><label class="form-label">Department</label><input class="form-input" id="offer-dept" placeholder="Engineering" /></div>
+            <div class="form-group"><label class="form-label">Joining Date</label><input class="form-input" id="offer-date" type="date" /></div>
+            <div class="form-group"><label class="form-label">CTC (₹/annum)</label><input class="form-input" id="offer-ctc" placeholder="1200000" /></div>
+            <div class="form-group"><label class="form-label">Reporting Manager</label><input class="form-input" id="offer-mgr" placeholder="Priya Sharma" /></div>
+          </div>
+          <button class="btn-primary" style="width:auto;padding:10px 24px;margin-top:8px" onclick="generatePDF('offer')">⬇ Generate Offer Letter PDF</button>
+        </div>
+        <div id="doc-form-appointment" style="display:none">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" id="appt-name" placeholder="Rahul Gupta" /></div>
+            <div class="form-group"><label class="form-label">Designation</label><input class="form-input" id="appt-desg" placeholder="Senior Developer" /></div>
+            <div class="form-group"><label class="form-label">Department</label><input class="form-input" id="appt-dept" placeholder="Engineering" /></div>
+            <div class="form-group"><label class="form-label">Date of Joining</label><input class="form-input" id="appt-doj" type="date" /></div>
+            <div class="form-group"><label class="form-label">Employee ID</label><input class="form-input" id="appt-id" placeholder="EMP-0150" /></div>
+            <div class="form-group"><label class="form-label">CTC (₹/annum)</label><input class="form-input" id="appt-ctc" placeholder="1200000" /></div>
+          </div>
+          <button class="btn-primary" style="width:auto;padding:10px 24px;margin-top:8px" onclick="generatePDF('appointment')">⬇ Generate Appointment Letter PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== CALENDAR ======================== -->
+    <div class="panel" id="panel-calendar">
+      <div class="two-col two-eq">
+        <div class="card">
+          <div class="cal-nav">
+            <button class="cal-nav-btn" onclick="calNav(-1)">‹ Prev</button>
+            <span id="cal-month-label" style="font-size:14px;font-weight:600"></span>
+            <button class="cal-nav-btn" onclick="calNav(1)">Next ›</button>
+          </div>
+          <div class="calendar-grid" id="cal-grid">
+            <div class="cal-head">Sun</div><div class="cal-head">Mon</div><div class="cal-head">Tue</div>
+            <div class="cal-head">Wed</div><div class="cal-head">Thu</div><div class="cal-head">Fri</div><div class="cal-head">Sat</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Upcoming Events</span><button class="btn-secondary" onclick="openCalModal()" style="font-size:12px;padding:6px 12px">+ Add Event</button></div>
+          <div id="events-list"></div>
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+            <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--text-muted)">HOLIDAYS 2024</div>
+            <div class="pay-row"><span class="pay-label">Diwali</span><span style="font-size:12px;color:var(--gold)">01 Nov</span></div>
+            <div class="pay-row"><span class="pay-label">Christmas</span><span style="font-size:12px;color:var(--gold)">25 Dec</span></div>
+            <div class="pay-row"><span class="pay-label">New Year</span><span style="font-size:12px;color:var(--gold)">01 Jan</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== SELF-SERVICE PORTAL ======================== -->
+    <div class="panel" id="panel-selfservice">
+      <div class="card" style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--blue));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700">AM</div>
+          <div>
+            <div style="font-size:18px;font-weight:700" id="portal-user-name">Aarav Mehta</div>
+            <div style="font-size:12px;color:var(--text-muted)">EMP-0042 · Sr. React Developer · Engineering</div>
+            <div style="margin-top:6px;display:flex;gap:8px">
+              <span class="pill pill-g">Active</span>
+              <span class="pill pill-b">Joined Mar 2022</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="portal-grid">
+        <div class="portal-card" onclick="go('leave')">
+          <div class="portal-icon">🌴</div>
+          <div class="portal-label">Apply Leave</div>
+          <div class="portal-desc">8 casual · 12 earned days left</div>
+        </div>
+        <div class="portal-card" onclick="generatePDF('payslip')">
+          <div class="portal-icon">💰</div>
+          <div class="portal-label">Download Payslip</div>
+          <div class="portal-desc">Oct 2024 – ₹92,000 net</div>
+        </div>
+        <div class="portal-card" onclick="go('attendance')">
+          <div class="portal-icon">📅</div>
+          <div class="portal-label">My Attendance</div>
+          <div class="portal-desc">90% this month · 18 days present</div>
+        </div>
+        <div class="portal-card" onclick="go('documents')">
+          <div class="portal-icon">📄</div>
+          <div class="portal-label">My Documents</div>
+          <div class="portal-desc">Payslips, letters, certificates</div>
+        </div>
+        <div class="portal-card" onclick="go('tickets')">
+          <div class="portal-icon">🎫</div>
+          <div class="portal-label">Raise Ticket</div>
+          <div class="portal-desc">HR support & complaints</div>
+        </div>
+        <div class="portal-card" onclick="go('ai')">
+          <div class="portal-icon">🤖</div>
+          <div class="portal-label">HR Assistant</div>
+          <div class="portal-desc">Ask any HR question</div>
+        </div>
+      </div>
+      <div class="two-col two-eq">
+        <div class="card">
+          <div class="card-head"><span class="card-title">My Leave Balance</span></div>
+          <div class="pay-row"><span class="pay-label">Casual Leave</span><span class="pay-val pos">8 days</span></div>
+          <div class="pay-row"><span class="pay-label">Earned Leave</span><span class="pay-val pos">12 days</span></div>
+          <div class="pay-row"><span class="pay-label">Sick Leave</span><span class="pay-val pos">6 days</span></div>
+          <div class="pay-row"><span class="pay-label">Used this year</span><span class="pay-val">9 days</span></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Quick Actions</span></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn-secondary" onclick="openLeaveModal()" style="text-align:left">🌴 Apply for Leave</button>
+            <button class="btn-secondary" onclick="generatePDF('payslip')" style="text-align:left">💰 Download Last Payslip</button>
+            <button class="btn-secondary" onclick="go('tickets')" style="text-align:left">🎫 Raise HR Ticket</button>
+            <button class="btn-secondary" onclick="go('ai')" style="text-align:left">🤖 Chat with AI</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== NOTIFICATIONS ======================== -->
+    <div class="panel" id="panel-notifications">
+      <div class="notif-channels">
+        <div class="channel-card">
+          <div class="channel-icon">📧</div>
+          <div class="channel-name">Email</div>
+          <div class="channel-status" style="color:var(--accent2)">Connected</div>
+          <label class="toggle-switch"><input type="checkbox" checked onchange="toggleChannel('email',this)"><span class="toggle-slider"></span></label>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:8px" id="email-status">Notifications: ON</div>
+        </div>
+        <div class="channel-card">
+          <div class="channel-icon">💬</div>
+          <div class="channel-name">WhatsApp</div>
+          <div class="channel-status" style="color:var(--gold)">Setup Required</div>
+          <label class="toggle-switch"><input type="checkbox" onchange="toggleChannel('whatsapp',this)"><span class="toggle-slider"></span></label>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Via Twilio/WATI API</div>
+        </div>
+        <div class="channel-card">
+          <div class="channel-icon">📱</div>
+          <div class="channel-name">SMS</div>
+          <div class="channel-status" style="color:var(--gold)">Setup Required</div>
+          <label class="toggle-switch"><input type="checkbox" onchange="toggleChannel('sms',this)"><span class="toggle-slider"></span></label>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Via Twilio/MSG91 API</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">Notification Settings</span></div>
+        <table class="tbl">
+          <thead><tr><th>Event</th><th>Email</th><th>WhatsApp</th><th>SMS</th></tr></thead>
+          <tbody>
+            <tr><td>Leave Approval/Rejection</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox" checked></td></tr>
+            <tr><td>Payslip Generated</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
+            <tr><td>New Ticket Reply</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td></tr>
+            <tr><td>Attendance Alert</td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox" checked></td></tr>
+            <tr><td>Policy Updates</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
+            <tr><td>Birthday & Anniversaries</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px">API CONFIGURATION</div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">SendGrid / SMTP API Key</label><input class="form-input" placeholder="SG.xxxxxxxx" /></div>
+            <div class="form-group"><label class="form-label">Twilio Account SID</label><input class="form-input" placeholder="ACxxxxxxxx" /></div>
+            <div class="form-group"><label class="form-label">WhatsApp API Key (WATI)</label><input class="form-input" placeholder="wati_key_xxx" /></div>
+            <div class="form-group"><label class="form-label">MSG91 Auth Key</label><input class="form-input" placeholder="msg91_key" /></div>
+          </div>
+          <button class="btn-primary" style="width:auto;padding:10px 24px" onclick="showToast('Settings saved! API keys stored securely.','success')">Save Notification Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== TICKETS ======================== -->
+    <div class="panel" id="panel-tickets">
+      <div class="stat-grid stat-3">
+        <div class="stat-card"><div class="s-label">Open Tickets</div><div class="s-num" style="color:var(--coral)">18</div></div>
+        <div class="stat-card"><div class="s-label">In Progress</div><div class="s-num" style="color:var(--gold)">7</div></div>
+        <div class="stat-card"><div class="s-label">Resolved Today</div><div class="s-num" style="color:var(--accent2)">5</div></div>
+      </div>
+      <div style="margin-bottom:14px;text-align:right">
+        <button class="btn-primary" style="width:auto;padding:9px 16px" onclick="openTicketModal()">+ Raise Ticket</button>
+      </div>
+      <div id="ticket-list"></div>
+    </div>
+
+    <!-- ======================== NOTICE BOARD ======================== -->
+    <div class="panel" id="panel-noticeboard">
+      <div class="card">
+        <div class="card-head"><span class="card-title">📌 Company Announcements</span><span class="badge bg">Active</span></div>
+        <div class="ann-item"><div class="ann-ico" style="background:rgba(29,158,117,0.15)">🎉</div><div><div class="ann-title">Diwali Bonus Announced – 15% of Basic Salary</div><div class="ann-desc">All eligible employees with 6+ months tenure will receive the festival bonus on 10th November.</div></div></div>
+        <div class="ann-item"><div class="ann-ico" style="background:rgba(55,138,221,0.15)">🏠</div><div><div class="ann-title">Work From Home Policy Update – Q4 2024</div><div class="ann-desc">Effective 1st November, employees may WFH up to 3 days/week with manager approval.</div></div></div>
+        <div class="ann-item"><div class="ann-ico" style="background:rgba(239,159,39,0.15)">⚠️</div><div><div class="ann-title">Annual Appraisal Cycle Begins – November 15</div><div class="ann-desc">All HODs to submit Q3 performance reviews by 12th November. Self-assessment forms are live.</div></div></div>
+        <div class="ann-item"><div class="ann-ico" style="background:rgba(226,75,74,0.15)">📅</div><div><div class="ann-title">Office Holiday List 2025 Published</div><div class="ann-desc">13 gazetted holidays + 2 optional restricted holidays. Check under Leave Management.</div></div></div>
+        <div class="ann-item"><div class="ann-ico" style="background:rgba(127,119,221,0.15)">🚀</div><div><div class="ann-title">SmartHR Portal v2.0 Now Live!</div><div class="ann-desc">New features: Firebase Auth, Employee CRUD, AI Chat, PDF generation, WhatsApp & SMS notifications.</div></div></div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</main>
+
+<!-- ===== EMPLOYEE MODAL (ADD/EDIT) ===== -->
+<div class="modal-overlay" id="emp-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="emp-modal-title">Add New Employee</span>
+      <button class="modal-close" onclick="closeModal('emp-modal')">✕</button>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Full Name *</label><input class="form-input" id="em-name" placeholder="Aarav Mehta" /></div>
+      <div class="form-group"><label class="form-label">Employee ID *</label><input class="form-input" id="em-id" placeholder="EMP-0042" /></div>
+      <div class="form-group"><label class="form-label">Department *</label>
+        <select class="form-select" id="em-dept">
+          <option>Engineering</option><option>Sales</option><option>HR & Admin</option>
+          <option>Marketing</option><option>Operations</option><option>Finance</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Designation *</label><input class="form-input" id="em-desg" placeholder="Sr. React Developer" /></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="em-email" type="email" placeholder="aarav@company.com" /></div>
+      <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="em-phone" placeholder="+91 98765 43210" /></div>
+      <div class="form-group"><label class="form-label">Date of Joining</label><input class="form-input" id="em-join" type="date" /></div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select class="form-select" id="em-status">
+          <option value="Active">Active</option><option value="On Leave">On Leave</option>
+          <option value="At Risk">At Risk</option><option value="Inactive">Inactive</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('emp-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:10px 24px" onclick="saveEmployee()">Save Employee</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CALENDAR EVENT MODAL ===== -->
+<div class="modal-overlay" id="cal-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Add Calendar Event</span>
+      <button class="modal-close" onclick="closeModal('cal-modal')">✕</button>
+    </div>
+    <div class="form-group"><label class="form-label">Event Title *</label><input class="form-input" id="cal-title" placeholder="Team meeting, interview, etc." /></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date *</label><input class="form-input" id="cal-date" type="date" /></div>
+      <div class="form-group"><label class="form-label">Type</label>
+        <select class="form-select" id="cal-type">
+          <option>Meeting</option><option>Interview</option><option>Holiday</option><option>Training</option><option>Reminder</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="cal-desc" placeholder="Optional details..." /></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('cal-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:10px 24px" onclick="saveCalEvent()">Add Event</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== LEAVE REQUEST MODAL ===== -->
+<div class="modal-overlay" id="leave-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Apply for Leave</span>
+      <button class="modal-close" onclick="closeModal('leave-modal')">✕</button>
+    </div>
+    <div class="form-group"><label class="form-label">Leave Type</label>
+      <select class="form-select" id="lv-type"><option>Casual Leave</option><option>Sick Leave</option><option>Earned Leave</option></select>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">From Date *</label><input class="form-input" id="lv-from" type="date" /></div>
+      <div class="form-group"><label class="form-label">To Date *</label><input class="form-input" id="lv-to" type="date" /></div>
+    </div>
+    <div class="form-group"><label class="form-label">Reason *</label><input class="form-input" id="lv-reason" placeholder="Brief reason for leave..." /></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('leave-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:10px 24px" onclick="submitLeave()">Submit Request</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TICKET MODAL ===== -->
+<div class="modal-overlay" id="ticket-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Raise HR Ticket</span>
+      <button class="modal-close" onclick="closeModal('ticket-modal')">✕</button>
+    </div>
+    <div class="form-group"><label class="form-label">Issue Title *</label><input class="form-input" id="tk-title" placeholder="Describe your issue briefly" /></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Category</label>
+        <select class="form-select" id="tk-cat"><option>Payroll</option><option>Leave</option><option>IT</option><option>Admin</option><option>HR Policy</option><option>Complaint</option></select>
+      </div>
+      <div class="form-group"><label class="form-label">Priority</label>
+        <select class="form-select" id="tk-pri"><option value="low">Low</option><option value="med">Medium</option><option value="high">High</option></select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="tk-desc" placeholder="Provide details..." style="height:60px" /></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('ticket-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:10px 24px" onclick="submitTicket()">Submit Ticket</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app-shell -->
+
+<script>
+// ===========================
+// PAGE TITLES
+// ===========================
+const titles = {
+  dashboard:['Dashboard',"Welcome back! Here's what's happening today."],
+  employees:['Employees','Manage all employee profiles, documents and records.'],
+  attendance:['Attendance','Track daily attendance, login times and monthly reports.'],
+  leave:['Leave Management','Approve or reject leave requests with multi-level workflow.'],
+  payroll:['Payroll','Salary structures, payslips, tax calculations and history.'],
+  recruitment:['Recruitment','AI-powered hiring pipeline and applicant tracking system.'],
+  performance:['Performance','KPI tracking, appraisals and AI attrition risk prediction.'],
+  ai:['AI Assistant','Real HR chatbot powered by Claude AI + resume analyzer.'],
+  documents:['Document Generator','Generate payslips, offer letters and appointment letters as PDF.'],
+  calendar:['Calendar','HR events, interviews, holidays and team schedule.'],
+  selfservice:['My Portal','Employee self-service – leaves, payslips, documents and more.'],
+  notifications:['Notifications','Configure email, WhatsApp and SMS notification channels.'],
+  tickets:['Tickets & Complaints','Employee issue tracking and resolution dashboard.'],
+  noticeboard:['Notice Board','Company announcements, holidays and policy updates.']
+};
+
+function go(name) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.panel === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+  if (titles[name]) {
+    document.getElementById('page-title').textContent = titles[name][0];
+    document.getElementById('page-sub').textContent = titles[name][1];
+  }
+  document.getElementById('notif-dropdown').classList.remove('open');
+}
+document.querySelectorAll('.nav-item').forEach(n => n.addEventListener('click', () => go(n.dataset.panel)));
+
+// ===========================
+// AUTH (Firebase + Demo mode)
+// ===========================
+async function handleLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const err = document.getElementById('login-error');
+  err.style.display = 'none';
+
+  if (!email || !password) { err.textContent = 'Please enter email and password.'; err.style.display = 'block'; return; }
+
+  // Try Firebase Auth first
+  if (window._firebaseAuth && window.firebaseLogin) {
+    try {
+      await window.firebaseLogin(email, password);
+      return; // onAuthStateChanged handles the rest
+    } catch (e) {
+      // If Firebase not configured, fall back to demo mode
+      if (e.code === 'auth/invalid-api-key' || e.code === 'auth/network-request-failed' || e.message.includes('API key')) {
+        demoLogin(email);
+      } else {
+        err.textContent = e.message.replace('Firebase: ','');
+        err.style.display = 'block';
+      }
+    }
+  } else {
+    demoLogin(email);
+  }
+}
+
+function demoLogin(email) {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = 'flex';
+  const name = email.split('@')[0];
+  document.getElementById('topbar-user-name').textContent = name;
+  document.getElementById('sidebar-user-name').textContent = name;
+  document.getElementById('portal-user-name').textContent = name;
+  showToast('Welcome to SmartHR! (Demo mode)', 'success');
+}
+
+async function handleRegister() {
+  const name = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const err = document.getElementById('reg-error');
+  err.style.display = 'none';
+
+  if (!name || !email || !password) { err.textContent = 'All fields are required.'; err.style.display = 'block'; return; }
+  if (password.length < 6) { err.textContent = 'Password must be at least 6 characters.'; err.style.display = 'block'; return; }
+
+  if (window._firebaseAuth && window._firebaseFn) {
+    try {
+      const cred = await window._firebaseFn.createUserWithEmailAndPassword(window._firebaseAuth, email, password);
+      // Set display name immediately after registration
+      await window._firebaseFn.updateProfile(cred.user, { displayName: name });
+      showToast('Account created! Welcome to SmartHR, ' + name + '!', 'success');
+    } catch(e) {
+      err.textContent = e.message.replace('Firebase: ','');
+      err.style.display = 'block';
+    }
+  } else {
+    demoLogin(email);
+  }
+}
+
+function handleLogout() {
+  if (window.firebaseLogout) {
+    window.firebaseLogout().catch(()=>{});
+  }
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app-shell').style.display = 'none';
+}
+
+function switchLoginTab(tab) {
+  document.getElementById('tab-login').style.display = tab === 'login' ? 'block' : 'none';
+  document.getElementById('tab-register').style.display = tab === 'register' ? 'block' : 'none';
+  document.querySelectorAll('.login-tab').forEach((t,i) => t.classList.toggle('active', (i===0) === (tab==='login')));
+}
+
+// ===========================
+// NOTIFICATIONS
+// ===========================
+const notifications = [
+  {title:"Leave approved – Priya Sharma", time:"2 min ago", unread:true},
+  {title:"New ticket raised: T-2041", time:"35 min ago", unread:true},
+  {title:"Payroll processing starts tomorrow", time:"1h ago", unread:true},
+  {title:"5 new applicants for Sr. Developer", time:"3h ago", unread:true},
+  {title:"KPI review due: 3 employees", time:"Yesterday", unread:true},
+  {title:"Attrition alert: Rajesh Kumar", time:"2d ago", unread:false},
+];
+
+function renderNotifications() {
+  const list = document.getElementById('notif-list');
+  list.innerHTML = notifications.slice(0,6).map((n,i) => `
+    <div class="notif-item ${n.unread?'unread':''}" onclick="markRead(${i})">
+      <div class="notif-item-title">${n.title}</div>
+      <div class="notif-item-time">${n.time}</div>
+    </div>`).join('');
+  const unread = notifications.filter(n=>n.unread).length;
+  document.getElementById('notif-count').textContent = unread;
+  document.getElementById('notif-count').style.display = unread ? 'flex' : 'none';
+}
+
+function toggleNotif() {
+  document.getElementById('notif-dropdown').classList.toggle('open');
+}
+function markRead(i) { notifications[i].unread = false; renderNotifications(); }
+function markAllRead() { notifications.forEach(n=>n.unread=false); renderNotifications(); showToast('All notifications marked as read','info'); }
+document.addEventListener('click', e => {
+  const dd = document.getElementById('notif-dropdown');
+  if (!e.target.closest('.icon-btn') && !e.target.closest('.notif-dropdown')) dd.classList.remove('open');
+});
+renderNotifications();
+
+// ===========================
+// EMPLOYEE CRUD
+// ===========================
+window.empData = [
+  {n:'Aarav Mehta', i:'AM', c:'rgba(55,138,221,0.2)', tc:'#378ADD', id:'EMP-0042', d:'Engineering', desg:'Sr. React Developer', s:'Active', j:'Mar 2022', email:'aarav@smarthr.com'},
+  {n:'Priya Sharma', i:'PS', c:'rgba(29,158,117,0.2)', tc:'#5DCAA5', id:'EMP-0091', d:'Sales', desg:'Sales Manager', s:'Active', j:'Jan 2021', email:'priya@smarthr.com'},
+  {n:'Rajesh Kumar', i:'RK', c:'rgba(226,75,74,0.2)', tc:'#f87171', id:'EMP-0058', d:'Sales', desg:'Business Dev Exec', s:'At Risk', j:'Jun 2020', email:'rajesh@smarthr.com'},
+  {n:'Neha Patel', i:'NP', c:'rgba(239,159,39,0.2)', tc:'#EF9F27', id:'EMP-0115', d:'Engineering', desg:'Data Scientist', s:'Active', j:'Aug 2023', email:'neha@smarthr.com'},
+  {n:'Vikram Rao', i:'VR', c:'rgba(127,119,221,0.2)', tc:'#7F77DD', id:'EMP-0033', d:'HR & Admin', desg:'HR Executive', s:'Active', j:'Nov 2019', email:'vikram@smarthr.com'},
+  {n:'Sunita Joshi', i:'SJ', c:'rgba(93,202,165,0.2)', tc:'#5DCAA5', id:'EMP-0077', d:'Finance', desg:'Finance Analyst', s:'Active', j:'Feb 2022', email:'sunita@smarthr.com'},
+  {n:'Amit Singh', i:'AS', c:'rgba(239,159,39,0.2)', tc:'#EF9F27', id:'EMP-0064', d:'Operations', desg:'Operations Lead', s:'On Leave', j:'Sep 2021', email:'amit@smarthr.com'},
+  {n:'Pooja Desai', i:'PD', c:'rgba(55,138,221,0.2)', tc:'#378ADD', id:'EMP-0102', d:'Marketing', desg:'Content Strategist', s:'Active', j:'May 2023', email:'pooja@smarthr.com'},
+  {n:'Kiran Bhat', i:'KB', c:'rgba(127,119,221,0.2)', tc:'#7F77DD', id:'EMP-0119', d:'Engineering', desg:'DevOps Engineer', s:'Active', j:'Jul 2024', email:'kiran@smarthr.com'},
+  {n:'Meera Iyer', i:'MI', c:'rgba(93,202,165,0.2)', tc:'#5DCAA5', id:'EMP-0088', d:'HR & Admin', desg:'Talent Acquisition', s:'Active', j:'Apr 2022', email:'meera@smarthr.com'},
+];
+
+let editingEmpIndex = -1;
+const avatarColors = [
+  ['rgba(55,138,221,0.2)','#378ADD'],['rgba(29,158,117,0.2)','#5DCAA5'],
+  ['rgba(127,119,221,0.2)','#7F77DD'],['rgba(239,159,39,0.2)','#EF9F27'],
+  ['rgba(226,75,74,0.2)','#f87171'],['rgba(93,202,165,0.2)','#5DCAA5']
+];
+
+function statusPill(s) {
+  return s==='Active'?'pill-g':s==='At Risk'?'pill-r':s==='On Leave'?'pill-o':'pill-b';
+}
+
+function renderEmp(data) {
+  document.getElementById('emp-tbody').innerHTML = data.map((e,i) => `
+    <tr>
+      <td><div class="emp-name-cell"><div class="emp-av" style="background:${e.c};color:${e.tc}">${e.i}</div>${e.n}</div></td>
+      <td style="color:var(--text-muted)">${e.id}</td>
+      <td>${e.d}</td>
+      <td style="color:var(--text-dim)">${e.desg}</td>
+      <td><span class="pill ${statusPill(e.s)}">${e.s}</span></td>
+      <td style="color:var(--text-muted)">${e.j}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button onclick="editEmployee(${window.empData.indexOf(e)})" style="background:rgba(55,138,221,0.2);border:none;color:var(--blue);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✏️ Edit</button>
+          <button onclick="deleteEmployee(${window.empData.indexOf(e)})" style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">🗑</button>
+        </div>
+      </td>
+    </tr>`).join('');
+  document.getElementById('emp-count-badge').textContent = data.length + ' total';
+}
+renderEmp(window.empData);
+
+function filterEmployees(q) {
+  const f = window.empData.filter(e => (e.n+e.d+e.desg+e.id).toLowerCase().includes(q.toLowerCase()));
+  renderEmp(f);
+}
+
+function openEmpModal(index = -1) {
+  editingEmpIndex = index;
+  document.getElementById('emp-modal-title').textContent = index >= 0 ? 'Edit Employee' : 'Add New Employee';
+  if (index >= 0) {
+    const e = window.empData[index];
+    document.getElementById('em-name').value = e.n;
+    document.getElementById('em-id').value = e.id;
+    document.getElementById('em-dept').value = e.d;
+    document.getElementById('em-desg').value = e.desg;
+    document.getElementById('em-email').value = e.email || '';
+    document.getElementById('em-status').value = e.s;
+  } else {
+    ['em-name','em-id','em-desg','em-email','em-phone'].forEach(id => document.getElementById(id).value = '');
+  }
+  document.getElementById('emp-modal').classList.add('open');
+}
+
+function editEmployee(i) { openEmpModal(i); }
+
+async function saveEmployee() {
+  const name = document.getElementById('em-name').value.trim();
+  const id = document.getElementById('em-id').value.trim();
+  const dept = document.getElementById('em-dept').value;
+  const desg = document.getElementById('em-desg').value.trim();
+  const status = document.getElementById('em-status').value;
+  if (!name || !id || !desg) { showToast('Please fill required fields','error'); return; }
+
+  const initials = name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  const [ac, tc] = avatarColors[Math.floor(Math.random()*avatarColors.length)];
+
+  if (editingEmpIndex >= 0) {
+    const e = window.empData[editingEmpIndex];
+    Object.assign(e, {n:name, id, d:dept, desg, s:status, i:initials});
+    // Firestore update
+    if (e._id && window.firestoreUpdateEmployee) {
+      try { await window.firestoreUpdateEmployee(e._id, {n:name,id,d:dept,desg,s:status}); } catch(err){}
+    }
+    showToast('Employee updated!', 'success');
+  } else {
+    const emp = {n:name, i:initials, c:ac, tc, id, d:dept, desg, s:status, j:new Date().toLocaleDateString('en-IN',{month:'short',year:'numeric'}), email:document.getElementById('em-email').value};
+    window.empData.push(emp);
+    // Firestore add
+    if (window.firestoreAddEmployee) {
+      try { const ref = await window.firestoreAddEmployee(emp); emp._id = ref.id; } catch(err){}
+    }
+    showToast('Employee added!', 'success');
+  }
+  renderEmp(window.empData);
+  closeModal('emp-modal');
+}
+
+async function deleteEmployee(i) {
+  if (!confirm('Delete this employee?')) return;
+  const e = window.empData[i];
+  if (e._id && window.firestoreDeleteEmployee) {
+    try { await window.firestoreDeleteEmployee(e._id); } catch(err){}
+  }
+  window.empData.splice(i,1);
+  renderEmp(window.empData);
+  showToast('Employee deleted', 'info');
+}
+
+// ===========================
+// LEAVE
+// ===========================
+const leaveData = [
+  {e:'Priya Sharma', t:'Sick Leave', f:'04 Nov', to:'05 Nov', d:2, r:'Fever', s:'approved'},
+  {e:'Vikram Rao', t:'Casual Leave', f:'08 Nov', to:'08 Nov', d:1, r:'Personal work', s:'pending'},
+  {e:'Amit Singh', t:'Earned Leave', f:'11 Nov', to:'15 Nov', d:5, r:'Family vacation', s:'approved'},
+  {e:'Neha Patel', t:'Sick Leave', f:'06 Nov', to:'06 Nov', d:1, r:'Doctor visit', s:'pending'},
+  {e:'Sunita Joshi', t:'Casual Leave', f:'12 Nov', to:'12 Nov', d:1, r:'Festival', s:'pending'},
+  {e:'Pooja Desai', t:'Earned Leave', f:'18 Nov', to:'22 Nov', d:5, r:'Travel', s:'rejected'},
+];
+
+function leavePill(s) { return s==='approved'?'pill-g':s==='rejected'?'pill-r':'pill-o'; }
+function renderLeave() {
+  document.getElementById('leave-tbody').innerHTML = leaveData.map((l,i) => `
+    <tr>
+      <td>${l.e}</td><td>${l.t}</td><td>${l.f}</td><td>${l.to}</td><td>${l.d}</td>
+      <td style="color:var(--text-muted);font-size:12px">${l.r}</td>
+      <td><span class="pill ${leavePill(l.s)}" id="ls-${i}">${l.s.charAt(0).toUpperCase()+l.s.slice(1)}</span></td>
+      <td id="la-${i}" style="padding:10px 12px">
+        ${l.s==='pending'?`<span style="display:flex;gap:6px">
+          <button style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer" onclick="actLeave(${i},'approved')">✓ Approve</button>
+          <button style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer" onclick="actLeave(${i},'rejected')">✗ Reject</button>
+          </span>`:'—'}
+      </td>
+    </tr>`).join('');
+}
+renderLeave();
+
+function actLeave(i, action) {
+  leaveData[i].s = action;
+  renderLeave();
+  showToast(`Leave ${action} for ${leaveData[i].e}`, action==='approved'?'success':'info');
+  sendNotification(leaveData[i].e, `Your leave request has been ${action}.`);
+}
+
+function openLeaveModal() { document.getElementById('leave-modal').classList.add('open'); }
+function submitLeave() {
+  const type = document.getElementById('lv-type').value;
+  const from = document.getElementById('lv-from').value;
+  const to = document.getElementById('lv-to').value;
+  const reason = document.getElementById('lv-reason').value;
+  if (!from || !reason) { showToast('Please fill all required fields','error'); return; }
+  leaveData.push({e:'You', t:type, f:from, to:to||from, d:1, r:reason, s:'pending'});
+  renderLeave();
+  closeModal('leave-modal');
+  showToast('Leave request submitted!', 'success');
+}
+
+// ===========================
+// ATTENDANCE CHART
+// ===========================
+const attValues = [88,92,90,85,93,87,91,96,90,88,94,89,92,91,88,90,93,87,85,91,94,90,88,92,89,91,93,90,88,92];
+const chartEl = document.getElementById('att-chart');
+const maxV = Math.max(...attValues);
+attValues.forEach((v,i) => {
+  const b = document.createElement('div');
+  b.className = 'tc-bar'; b.style.height = ((v/maxV)*100)+'%'; b.style.flex = '1';
+  b.style.background = v>=90?'var(--accent)':v>=85?'var(--gold)':'var(--coral)';
+  b.title = `Day ${i+1}: ${v}%`;
+  chartEl.appendChild(b);
+});
+
+// ===========================
+// KPI
+// ===========================
+const kpis = [
+  {n:'Aarav Mehta', s:91, c:'var(--blue)'},{n:'Priya Sharma', s:84, c:'var(--accent)'},
+  {n:'Vikram Rao', s:76, c:'var(--purple)'},{n:'Neha Patel', s:88, c:'var(--gold)'},
+  {n:'Sunita Joshi', s:79, c:'var(--accent2)'},{n:'Pooja Desai', s:95, c:'var(--coral)'},
+];
+document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
+  <div class="kpi-card">
+    <div class="kpi-name">${k.n}</div>
+    <div class="kpi-score" style="color:${k.c}">${k.s}<span style="font-size:13px;color:var(--text-muted)">/100</span></div>
+    <div class="kpi-bar-wrap"><div class="kpi-bar-fill" style="width:${k.s}%;background:${k.c}"></div></div>
+  </div>`).join('');
+
+// ===========================
+// TICKETS
+// ===========================
+let tickets = [
+  {id:'T-2041', title:'Salary discrepancy in October payslip', e:'Rajesh Kumar', d:'Sales', p:'high', s:'open', t:'2h ago'},
+  {id:'T-2040', title:'Leave balance not updated after approval', e:'Neha Patel', d:'Engineering', p:'med', s:'in-progress', t:'5h ago'},
+  {id:'T-2039', title:'IT laptop replacement request', e:'Amit Singh', d:'Operations', p:'low', s:'open', t:'1d ago'},
+  {id:'T-2038', title:'Admin – parking slot reallocation request', e:'Sunita Joshi', d:'Finance', p:'low', s:'resolved', t:'2d ago'},
+  {id:'T-2037', title:'Harassment concern – formal complaint', e:'Anonymous', d:'HR', p:'high', s:'in-progress', t:'3d ago'},
+];
+function priClass(p){return p==='high'?'pill-r':p==='med'?'pill-o':'pill-g';}
+function sClass(s){return s==='resolved'?'pill-g':s==='in-progress'?'pill-o':'pill-r';}
+function renderTickets() {
+  document.getElementById('ticket-list').innerHTML = tickets.map(t => `
+    <div class="ticket-card">
+      <div class="ticket-head">
+        <div>
+          <div class="ticket-title">${t.title}</div>
+          <div class="ticket-meta">${t.id} · ${t.e} · ${t.d} · ${t.t}</div>
+        </div>
+        <div class="ticket-badges">
+          <span class="pill ${priClass(t.p)}">${t.p.toUpperCase()}</span>
+          <span class="pill ${sClass(t.s)}">${t.s}</span>
+        </div>
+      </div>
+    </div>`).join('');
+}
+renderTickets();
+
+function openTicketModal() { document.getElementById('ticket-modal').classList.add('open'); }
+function submitTicket() {
+  const title = document.getElementById('tk-title').value.trim();
+  if (!title) { showToast('Please enter issue title','error'); return; }
+  const id = 'T-' + (2042 + tickets.length);
+  tickets.unshift({id, title, e:'You', d:document.getElementById('tk-cat').value, p:document.getElementById('tk-pri').value, s:'open', t:'Just now'});
+  renderTickets();
+  closeModal('ticket-modal');
+  showToast('Ticket ' + id + ' raised!', 'success');
+}
+
+// ===========================
+// AI ASSISTANT (Claude API)
+// ===========================
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+// NOTE: Replace with your actual Anthropic API key — keep this server-side in production!
+const CLAUDE_API_KEY = 'YOUR_ANTHROPIC_API_KEY';
+
+const systemPrompt = `You are SmartHR AI Assistant, an intelligent HR assistant for SmartHR portal. 
+You help employees with HR queries including: leave policies, payroll information, attendance, 
+performance reviews, company policies, and general HR guidance. 
+Context: This is an Indian company. Policies follow Indian labor laws.
+Leave structure: 12 casual leaves, 15 earned leaves, 10 sick leaves per year.
+Payroll: Processed on 28th of each month. Components: Basic, HRA, Special Allowance, Bonus, TDS, PF.
+Be concise, helpful, and professional. Use ₹ for currency amounts.`;
+
+let chatHistory = [];
+
+async function sendAI() {
+  const inp = document.getElementById('ai-input');
+  const chat = document.getElementById('ai-chat');
+  const text = inp.value.trim();
+  if (!text) return;
+
+  chat.innerHTML += `<div class="msg msg-user">${text}</div>`;
+  inp.value = '';
+  chatHistory.push({role:'user', content: text});
+
+  // Show typing indicator
+  const typingId = 'typing-' + Date.now();
+  chat.innerHTML += `<div class="msg msg-bot msg-typing" id="${typingId}"><span></span><span></span><span></span></div>`;
+  chat.scrollTop = chat.scrollHeight;
+
+  document.getElementById('ai-send-btn').disabled = true;
+
+  try {
+    let reply = '';
+
+    if (CLAUDE_API_KEY !== 'YOUR_ANTHROPIC_API_KEY') {
+      // Real Claude API call
+      const res = await fetch(CLAUDE_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': CLAUDE_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 500,
+          system: systemPrompt,
+          messages: chatHistory
+        })
+      });
+      const data = await res.json();
+      reply = data.content?.[0]?.text || 'Sorry, I could not get a response.';
+    } else {
+      // Demo mode fallback
+      reply = await demoAIReply(text);
+    }
+
+    chatHistory.push({role:'assistant', content: reply});
+
+    const typing = document.getElementById(typingId);
+    if (typing) typing.outerHTML = `<div class="msg msg-bot">${reply}</div>`;
+  } catch(e) {
+    const typing = document.getElementById(typingId);
+    if (typing) typing.outerHTML = `<div class="msg msg-bot">⚠️ API error. Add your Anthropic API key to enable real AI responses.</div>`;
+  }
+
+  document.getElementById('ai-send-btn').disabled = false;
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function demoAIReply(q) {
+  await new Promise(r => setTimeout(r, 800));
+  q = q.toLowerCase();
+  if (q.includes('leave') && q.includes('balanc')) return 'You have 8 casual leave days and 12 earned leave days remaining this year. Your pending leave request (08 Nov) is awaiting HOD approval.';
+  if (q.includes('matern')) return 'The maternity leave policy provides 26 weeks of paid leave for female employees after completing 80 days of service, as per the Maternity Benefit Act, 1961.';
+  if (q.includes('payroll')||q.includes('salary')) return 'The next payroll processing date is 28th November. Net salary credited by EOD to all registered bank accounts.';
+  if (q.includes('attend')) return 'Your attendance this month: 18 days present, 1 sick leave, 1 WFH. Rate: 90%. No late arrivals recorded.';
+  if (q.includes('wfh')||q.includes('work from home')) return 'WFH Policy (Q4 2024): Employees may WFH up to 3 days/week with prior manager approval. Request must be submitted before 9 AM.';
+  if (q.includes('apply')||q.includes('how')) return 'To apply for leave: Go to Leave Management → Click "Apply Leave" → Select type, dates, and reason → Submit. HOD approval required within 24 hours.';
+  return "I'm here to help with HR queries! Ask about leave policies, payroll, attendance, performance reviews, or company policies. Add your Anthropic API key for full AI capabilities.";
+}
+
+function askChip(q) { document.getElementById('ai-input').value = q; sendAI(); }
+
+// ===========================
+// RESUME ANALYZER (Claude API)
+// ===========================
+function handleResumeDrop(e) {
+  e.preventDefault();
+  document.getElementById('resume-drop').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processResumeFile(file);
+}
+
+function analyzeResume(input) {
+  const file = input.files[0];
+  if (file) processResumeFile(file);
+}
+
+async function processResumeFile(file) {
+  document.getElementById('resume-drop-label').textContent = '📄 ' + file.name;
+  document.getElementById('resume-result').style.display = 'block';
+  document.getElementById('resume-analyzing').style.display = 'block';
+  document.getElementById('resume-output').innerHTML = '';
+
+  // Read file content
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = e.target.result.split(',')[1];
+    const isPDF = file.type === 'application/pdf';
+
+    try {
+      let analysis;
+      if (CLAUDE_API_KEY !== 'YOUR_ANTHROPIC_API_KEY') {
+        const messages = [{
+          role: 'user',
+          content: isPDF ? [
+            {type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}},
+            {type:'text', text:'Analyze this resume for an HR role. Extract: top skills, years of experience, education, missing skills for a software developer role, and give a match score 0-100. Format as JSON: {score, topSkills, missingSkills, experience, education, recommendation}'}
+          ] : [{type:'text', text:'Analyze this resume text and provide HR insights as JSON: {score, topSkills, missingSkills, experience, education, recommendation}. Text: ' + atob(base64).substring(0,3000)}]
+        }];
+
+        const res = await fetch(CLAUDE_API_URL, {
+          method:'POST',
+          headers:{'Content-Type':'application/json','x-api-key':CLAUDE_API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+          body: JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:600, messages})
+        });
+        const data = await res.json();
+        const text = data.content?.[0]?.text || '{}';
+        analysis = JSON.parse(text.replace(/```json|```/g,'').trim());
+      } else {
+        // Demo analysis
+        await new Promise(r => setTimeout(r, 1500));
+        analysis = {score:89, topSkills:['React','Node.js','AWS','TypeScript','GraphQL'], missingSkills:['Kubernetes','Docker Swarm'], experience:'4.5 years', education:'B.Tech Computer Science', recommendation:'Shortlist'};
+      }
+
+      document.getElementById('resume-analyzing').style.display = 'none';
+      document.getElementById('resume-output').innerHTML = `
+        <div class="pay-row"><span class="pay-label">Match Score</span><span class="pay-val pos" style="font-size:22px">${analysis.score}%</span></div>
+        <div class="pay-row"><span class="pay-label">Top Skills</span><span class="pay-val" style="font-size:12px;color:var(--accent2)">${Array.isArray(analysis.topSkills)?analysis.topSkills.join(', '):analysis.topSkills}</span></div>
+        <div class="pay-row"><span class="pay-label">Missing Skills</span><span class="pay-val" style="font-size:12px;color:var(--coral)">${Array.isArray(analysis.missingSkills)?analysis.missingSkills.join(', '):analysis.missingSkills}</span></div>
+        <div class="pay-row"><span class="pay-label">Experience</span><span class="pay-val">${analysis.experience}</span></div>
+        <div class="pay-row"><span class="pay-label">Education</span><span class="pay-val" style="font-size:12px">${analysis.education||'—'}</span></div>
+        <div class="pay-row"><span class="pay-label">Recommendation</span><span class="pill ${analysis.score>=70?'pill-g':analysis.score>=50?'pill-o':'pill-r'}">${analysis.recommendation} ${analysis.score>=70?'✓':''}</span></div>`;
+    } catch(err) {
+      document.getElementById('resume-analyzing').style.display = 'none';
+      document.getElementById('resume-output').innerHTML = `<div style="color:var(--coral);font-size:12px">⚠️ Analysis failed. Add Anthropic API key for real resume analysis.</div>`;
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+// ===========================
+// PDF GENERATION (jsPDF)
+// ===========================
+let currentDocType = 'payslip';
+function selectDocType(card, type) {
+  document.querySelectorAll('.doc-type-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  currentDocType = type;
+  document.getElementById('doc-form-payslip').style.display = type==='payslip'?'block':'none';
+  document.getElementById('doc-form-offer').style.display = type==='offer'?'block':'none';
+  document.getElementById('doc-form-appointment').style.display = type==='appointment'?'block':'none';
+}
+
+function generatePDF(type) {
+  if (typeof window.jspdf === 'undefined' && typeof window.jsPDF === 'undefined') {
+    showToast('jsPDF loading... Please try again in a moment','info');
+    return;
+  }
+  const { jsPDF } = window.jspdf || window;
+  const doc = new jsPDF();
+
+  const navy = [10, 22, 40];
+  const accent = [29, 158, 117];
+  const gold = [239, 159, 39];
+  const gray = [120, 130, 150];
+
+  if (type === 'payslip') {
+    const empName = document.getElementById('pdf-emp-name')?.value || 'Aarav Mehta';
+    const empId = document.getElementById('pdf-emp-id')?.value || 'EMP-0042';
+    const dept = document.getElementById('pdf-dept')?.value || 'Engineering';
+    const month = document.getElementById('pdf-month')?.value || 'October 2024';
+    const basic = parseInt(document.getElementById('pdf-basic')?.value || '65000');
+    const hra = parseInt(document.getElementById('pdf-hra')?.value || '26000');
+    const special = 12000, bonus = 8000, tds = 11200, pf = 7800;
+    const gross = basic + hra + special + bonus;
+    const net = gross - tds - pf;
+
+    doc.setFillColor(...navy); doc.rect(0,0,210,297,'F');
+    doc.setFillColor(...accent); doc.rect(0,0,210,40,'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(22); doc.setFont('helvetica','bold');
+    doc.text('SmartHR', 20, 22);
+    doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.text('AI-POWERED HR PORTAL', 20, 30);
+    doc.setFontSize(14); doc.text('PAYSLIP', 160, 20);
+    doc.setFontSize(10); doc.text(month, 160, 28);
+    doc.setTextColor(...navy); doc.setFillColor(240,245,255); doc.roundedRect(15,48,180,30,3,3,'F');
+    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(20,30,50);
+    doc.text(empName, 22, 58); doc.setFontSize(9); doc.setFont('helvetica','normal');
+    doc.setTextColor(...gray); doc.text(empId + '  |  ' + dept, 22, 66);
+    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(20,30,50);
+    doc.text('EARNINGS', 20, 90); doc.text('AMOUNT (₹)', 155, 90);
+    doc.setFillColor(...accent); doc.rect(15,92,180,1,'F');
+    const rows = [['Basic Salary', basic],['HRA', hra],['Special Allowance', special],['Performance Bonus', bonus]];
+    let y = 100;
+    rows.forEach(([l,v]) => {
+      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(50,60,80);
+      doc.text(l, 22, y); doc.text('+ ' + v.toLocaleString('en-IN'), 155, y);
+      y += 9;
+    });
+    doc.setFillColor(220,230,240); doc.rect(15,y,180,8,'F');
+    doc.setFont('helvetica','bold'); doc.setTextColor(20,30,50);
+    doc.text('Gross Total', 22, y+6); doc.text(gross.toLocaleString('en-IN'), 155, y+6); y += 18;
+    doc.text('DEDUCTIONS', 20, y); doc.text('AMOUNT (₹)', 155, y); y += 4;
+    doc.setFillColor(...gold); doc.rect(15,y,180,1,'F'); y += 8;
+    [['Income Tax (TDS)', tds],['Provident Fund (PF)', pf]].forEach(([l,v]) => {
+      doc.setFont('helvetica','normal'); doc.setTextColor(50,60,80);
+      doc.text(l, 22, y); doc.text('- ' + v.toLocaleString('en-IN'), 155, y); y += 9;
+    });
+    doc.setFillColor(...accent); doc.rect(15,y,180,12,'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(12);
+    doc.text('NET PAY', 22, y+8); doc.text('₹ ' + net.toLocaleString('en-IN'), 145, y+8); y += 25;
+    doc.setTextColor(...gray); doc.setFontSize(8); doc.setFont('helvetica','normal');
+    doc.text('This is a computer-generated payslip. No signature required.', 105, y, {align:'center'});
+    doc.save(`Payslip_${empName.replace(' ','_')}_${month}.pdf`);
+
+  } else if (type === 'offer') {
+    const name = document.getElementById('offer-name')?.value || 'Candidate';
+    const role = document.getElementById('offer-role')?.value || 'Software Engineer';
+    const dept = document.getElementById('offer-dept')?.value || 'Engineering';
+    const date = document.getElementById('offer-date')?.value || new Date().toLocaleDateString();
+    const ctc = parseInt(document.getElementById('offer-ctc')?.value || '1200000');
+    const mgr = document.getElementById('offer-mgr')?.value || 'HR Manager';
+
+    doc.setFillColor(...navy); doc.rect(0,0,210,297,'F');
+    doc.setFillColor(...accent); doc.rect(0,0,210,35,'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.text('SmartHR', 20,20);
+    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.text('AI-Powered HR Portal  |  hr@smarthr.com', 20,28);
+    doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.text('OFFER OF EMPLOYMENT', 105,50,{align:'center'});
+    doc.setFillColor(...accent); doc.rect(80,53,50,1,'F');
+    doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(200,215,230);
+    doc.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, 20, 65);
+    doc.text(`Ref: OFR-${Math.floor(Math.random()*9000+1000)}`, 140, 65);
+    doc.setTextColor(220,235,255); doc.setFontSize(11); doc.setFont('helvetica','bold');
+    doc.text(`Dear ${name},`, 20, 80);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    const body = `We are pleased to offer you the position of ${role} in the ${dept} department at SmartHR Technologies Pvt. Ltd. After reviewing your application and interviews, we believe you will be a valuable addition to our team.`;
+    const lines = doc.splitTextToSize(body, 170);
+    doc.text(lines, 20, 92);
+    const details = [['Position:', role],['Department:', dept],['Date of Joining:', date],['Reporting To:', mgr],['Annual CTC:', '₹ ' + ctc.toLocaleString('en-IN')]];
+    let y = 118;
+    doc.setFillColor(15,32,64); doc.roundedRect(15,y-6,180,details.length*10+10,3,3,'F');
+    details.forEach(([l,v]) => {
+      doc.setFont('helvetica','bold'); doc.setTextColor(...accent); doc.text(l, 22, y);
+      doc.setFont('helvetica','normal'); doc.setTextColor(220,235,255); doc.text(v, 80, y);
+      y += 10;
+    });
+    y += 10;
+    doc.setTextColor(180,200,220); doc.setFontSize(9);
+    doc.text('This offer is subject to satisfactory background verification and reference checks.', 20, y);
+    doc.text('Please confirm acceptance within 7 days.', 20, y+8);
+    y += 25; doc.setFillColor(...accent); doc.rect(15,y,180,1,'F');
+    y += 10; doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255); doc.text('HR Department', 20, y);
+    doc.setFont('helvetica','normal'); doc.setTextColor(180,200,220); doc.text('SmartHR Technologies Pvt. Ltd.', 20, y+7);
+    doc.save(`Offer_Letter_${name.replace(' ','_')}.pdf`);
+
+  } else if (type === 'appointment') {
+    const name = document.getElementById('appt-name')?.value || 'Employee';
+    const desg = document.getElementById('appt-desg')?.value || 'Software Engineer';
+    const dept = document.getElementById('appt-dept')?.value || 'Engineering';
+    const doj = document.getElementById('appt-doj')?.value || new Date().toLocaleDateString();
+    const eid = document.getElementById('appt-id')?.value || 'EMP-0001';
+    const ctc = parseInt(document.getElementById('appt-ctc')?.value || '1200000');
+
+    doc.setFillColor(...navy); doc.rect(0,0,210,297,'F');
+    doc.setFillColor(...accent); doc.rect(0,0,210,35,'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.text('SmartHR', 20,20);
+    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.text('AI-Powered HR Portal', 20,28);
+    doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.text('APPOINTMENT LETTER', 105,50,{align:'center'});
+    doc.setFillColor(...accent); doc.rect(80,53,50,1,'F');
+    doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(200,215,230);
+    doc.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, 20, 65);
+    doc.text(`Emp ID: ${eid}`, 140, 65);
+    doc.setTextColor(220,235,255); doc.setFontSize(11); doc.setFont('helvetica','bold');
+    doc.text(`Dear ${name},`, 20, 80);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    const apptBody = `This is to confirm your appointment as ${desg} in the ${dept} department of SmartHR Technologies Pvt. Ltd. with effect from ${doj}.`;
+    doc.text(doc.splitTextToSize(apptBody, 170), 20, 92);
+    const info = [['Employee ID:',eid],['Designation:',desg],['Department:',dept],['Date of Joining:',doj],['Annual CTC:','₹ ' + ctc.toLocaleString('en-IN')],['Probation Period:','6 months']];
+    let y = 115;
+    doc.setFillColor(15,32,64); doc.roundedRect(15,y-6,180,info.length*10+10,3,3,'F');
+    info.forEach(([l,v]) => {
+      doc.setFont('helvetica','bold'); doc.setTextColor(...accent); doc.text(l, 22, y);
+      doc.setFont('helvetica','normal'); doc.setTextColor(220,235,255); doc.text(v, 80, y);
+      y += 10;
+    });
+    y += 14;
+    doc.setFont('helvetica','normal'); doc.setTextColor(180,200,220); doc.setFontSize(9);
+    doc.text("You will be governed by the company's HR policies and code of conduct in force from time to time.", 20, y);
+    y += 20; doc.setFillColor(...accent); doc.rect(15,y,180,1,'F');
+    y += 10; doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255); doc.text('Authorized Signatory', 20, y);
+    doc.setFont('helvetica','normal'); doc.setTextColor(180,200,220); doc.text('SmartHR Technologies Pvt. Ltd.', 20, y+7);
+    doc.save(`Appointment_Letter_${name.replace(' ','_')}.pdf`);
+  }
+
+  showToast('PDF generated and downloaded!', 'success');
+}
+
+// ===========================
+// CALENDAR
+// ===========================
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+let calEvents = [
+  {date:`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-15`, title:'Appraisal Cycle Begins', type:'Reminder'},
+  {date:`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-28`, title:'Payroll Processing', type:'Reminder'},
+  {date:`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-20`, title:'Team Interview – Sr. Dev', type:'Interview'},
+];
+const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function renderCalendar() {
+  document.getElementById('cal-month-label').textContent = monthNames[calMonth] + ' ' + calYear;
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+  const today = new Date();
+  const grid = document.getElementById('cal-grid');
+  // Keep headers
+  const headers = Array.from(grid.querySelectorAll('.cal-head'));
+  grid.innerHTML = '';
+  headers.forEach(h => grid.appendChild(h));
+
+  const eventDates = calEvents.map(e => e.date);
+  const holidays = [`${calYear}-11-01`,`${calYear}-12-25`,`${calYear}-01-01`];
+
+  // Empty cells
+  for (let i=0;i<firstDay;i++) { const d=document.createElement('div'); d.className='cal-day other-month'; grid.appendChild(d); }
+  for (let d=1;d<=daysInMonth;d++) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-day';
+    cell.textContent = d;
+    const dateStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if (d===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear()) cell.classList.add('today');
+    if (eventDates.includes(dateStr)) cell.classList.add('has-event');
+    if (holidays.includes(dateStr)) cell.classList.add('holiday');
+    cell.title = calEvents.filter(e=>e.date===dateStr).map(e=>e.title).join(', ')||'';
+    grid.appendChild(cell);
+  }
+  renderEvents();
+}
+
+function renderEvents() {
+  const upcoming = calEvents.filter(e => new Date(e.date) >= new Date()).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(0,5);
+  document.getElementById('events-list').innerHTML = upcoming.length ?
+    upcoming.map(e => `<div class="act-item"><div class="act-dot" style="background:var(--accent2)"></div><div class="act-text">${e.title}</div><div class="act-time">${e.date}</div></div>`).join('') :
+    `<div style="font-size:13px;color:var(--text-muted);text-align:center;padding:20px">No upcoming events</div>`;
+}
+
+function calNav(dir) { calMonth += dir; if(calMonth>11){calMonth=0;calYear++;}if(calMonth<0){calMonth=11;calYear--;} renderCalendar(); }
+function openCalModal() { document.getElementById('cal-modal').classList.add('open'); }
+function saveCalEvent() {
+  const title = document.getElementById('cal-title').value.trim();
+  const date = document.getElementById('cal-date').value;
+  if (!title || !date) { showToast('Please fill title and date','error'); return; }
+  calEvents.push({date, title, type:document.getElementById('cal-type').value});
+  renderCalendar();
+  closeModal('cal-modal');
+  showToast('Event added to calendar!','success');
+}
+renderCalendar();
+
+// ===========================
+// NOTIFICATIONS SETUP
+// ===========================
+function toggleChannel(ch, el) {
+  const labels = {email:'email-status'};
+  if (labels[ch]) document.getElementById(labels[ch]).textContent = 'Notifications: ' + (el.checked?'ON':'OFF');
+  showToast(`${ch.charAt(0).toUpperCase()+ch.slice(1)} notifications ${el.checked?'enabled':'disabled'}`, el.checked?'success':'info');
+}
+
+function sendNotification(user, message) {
+  // Placeholder for real notification logic
+  // In production: call Twilio/SendGrid/WATI APIs via backend
+  console.log(`[SmartHR Notification] To: ${user} | ${message}`);
+  // Example Twilio SMS (backend call):
+  // fetch('/api/send-sms', {method:'POST', body:JSON.stringify({to:'+91XXXXXXXXXX', message})})
+}
+
+// ===========================
+// MODALS
+// ===========================
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if(e.target===m) m.classList.remove('open'); });
+});
+
+// ===========================
+// TOAST
+// ===========================
+let toastTimer;
+function showToast(msg, type='info') {
+  const toast = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  toast.className = `toast ${type} show`;
+  document.getElementById('toast-icon').textContent = type==='success'?'✓':type==='error'?'✕':'ℹ';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3500);
+}
+</script>
+</body>
+</html>

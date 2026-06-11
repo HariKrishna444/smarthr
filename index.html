@@ -52,7 +52,9 @@
       const displayName = user.displayName || user.email.split('@')[0];
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('app-shell').style.display = 'flex';
-      document.getElementById('topbar-user-name').textContent = displayName;
+      const _ini2 = displayName.replace(/[^a-zA-Z ]/g,' ').trim().split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||displayName.slice(0,2).toUpperCase();
+      document.getElementById('topbar-user-name').textContent = _ini2;
+      const _pav2 = document.getElementById('portal-avatar'); if(_pav2)_pav2.textContent=_ini2;
       document.getElementById('sidebar-user-name').textContent = displayName;
       document.getElementById('portal-user-name').textContent = displayName;
       // Log login event
@@ -986,28 +988,71 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
             <div class="doc-type-name">Appointment Letter</div>
           </div>
         </div>
-        <div id="doc-form-payslip">
+        <!-- ── Shared company fields ── -->
+        <div style="background:rgba(29,158,117,0.06);border:1px solid rgba(29,158,117,0.15);border-radius:10px;padding:14px;margin-bottom:14px">
+          <div style="font-size:11px;font-weight:600;color:var(--accent2);letter-spacing:0.8px;text-transform:uppercase;margin-bottom:10px">🏢 Company Details (used in all documents)</div>
           <div class="form-row">
-            <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" id="pdf-emp-name" value="Aarav Mehta" /></div>
-            <div class="form-group"><label class="form-label">Employee ID</label><input class="form-input" id="pdf-emp-id" value="EMP-0042" /></div>
-            <div class="form-group"><label class="form-label">Department</label><input class="form-input" id="pdf-dept" value="Engineering" /></div>
-            <div class="form-group"><label class="form-label">Month</label><input class="form-input" id="pdf-month" value="October 2024" /></div>
-            <div class="form-group"><label class="form-label">Basic Salary (₹)</label><input class="form-input" id="pdf-basic" value="65000" /></div>
-            <div class="form-group"><label class="form-label">HRA (₹)</label><input class="form-input" id="pdf-hra" value="26000" /></div>
+            <div class="form-group"><label class="form-label">Company / University Name</label><input class="form-input" id="pdf-company" value="SmartHR Technologies Pvt. Ltd." /></div>
+            <div class="form-group"><label class="form-label">Address / Campus</label><input class="form-input" id="pdf-addr" value="Hyderabad, Telangana 500081" /></div>
+          </div>
+        </div>
+
+        <!-- ── PAYSLIP FORM ── -->
+        <div id="doc-form-payslip">
+          <div style="font-size:11px;font-weight:600;color:var(--text-muted);letter-spacing:0.8px;text-transform:uppercase;margin-bottom:10px">Employee Details</div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" id="pdf-emp-name" value="Arvapalli Harikrishna" /></div>
+            <div class="form-group"><label class="form-label">Employee Code</label><input class="form-input" id="pdf-emp-id" value="60000124" /></div>
+            <div class="form-group"><label class="form-label">Designation</label><input class="form-input" id="pdf-desg" value="Lab Assistant" /></div>
+            <div class="form-group"><label class="form-label">Department</label><input class="form-input" id="pdf-dept" value="CSE" /></div>
+            <div class="form-group"><label class="form-label">Employee Group</label><input class="form-input" id="pdf-empgrp" value="Non-Teaching" /></div>
+            <div class="form-group"><label class="form-label">Month</label><input class="form-input" id="pdf-month" value="May 2026" /></div>
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--text-muted);letter-spacing:0.8px;text-transform:uppercase;margin:12px 0 10px">Bank & Tax Details</div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Bank Name</label><input class="form-input" id="pdf-bankname" value="Axis Bank" /></div>
+            <div class="form-group"><label class="form-label">Bank A/c No</label><input class="form-input" id="pdf-bank" value="925010049320478" /></div>
+            <div class="form-group"><label class="form-label">IFSC Code</label><input class="form-input" id="pdf-ifsc" value="UTIB0000027" /></div>
+            <div class="form-group"><label class="form-label">PAN Number</label><input class="form-input" id="pdf-pan" value="BFZPH4258E" /></div>
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--text-muted);letter-spacing:0.8px;text-transform:uppercase;margin:12px 0 10px">Salary Components (₹)</div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Basic Salary</label><input class="form-input" id="pdf-basic" value="13333" /></div>
+            <div class="form-group"><label class="form-label">DA (Dearness Allowance)</label><input class="form-input" id="pdf-da" value="12000" /></div>
+            <div class="form-group"><label class="form-label">HRA</label><input class="form-input" id="pdf-hra" value="1333" /></div>
+            <div class="form-group"><label class="form-label">Special Allowance</label><input class="form-input" id="pdf-special" value="4867" /></div>
+            <div class="form-group"><label class="form-label">PF Deduction</label><input class="form-input" id="pdf-pf" value="1800" /></div>
+            <div class="form-group"><label class="form-label">Professional Tax</label><input class="form-input" id="pdf-ptax" value="200" /></div>
           </div>
           <button class="btn-primary" style="width:auto;padding:10px 24px;margin-top:8px" onclick="generatePDF('payslip')">⬇ Generate & Download Payslip PDF</button>
         </div>
+
+        <!-- ── OFFER/CONTRACT LETTER FORM ── -->
         <div id="doc-form-offer" style="display:none">
+          <div style="font-size:11px;font-weight:600;color:var(--text-muted);letter-spacing:0.8px;text-transform:uppercase;margin-bottom:10px">Candidate Details</div>
           <div class="form-row">
-            <div class="form-group"><label class="form-label">Candidate Name</label><input class="form-input" id="offer-name" placeholder="Rahul Gupta" /></div>
-            <div class="form-group"><label class="form-label">Role</label><input class="form-input" id="offer-role" placeholder="Senior Developer" /></div>
-            <div class="form-group"><label class="form-label">Department</label><input class="form-input" id="offer-dept" placeholder="Engineering" /></div>
-            <div class="form-group"><label class="form-label">Joining Date</label><input class="form-input" id="offer-date" type="date" /></div>
-            <div class="form-group"><label class="form-label">CTC (₹/annum)</label><input class="form-input" id="offer-ctc" placeholder="1200000" /></div>
-            <div class="form-group"><label class="form-label">Reporting Manager</label><input class="form-input" id="offer-mgr" placeholder="Priya Sharma" /></div>
+            <div class="form-group"><label class="form-label">Candidate Full Name</label><input class="form-input" id="offer-name" placeholder="Arvapalli Harikrishna" /></div>
+            <div class="form-group"><label class="form-label">Role / Designation</label><input class="form-input" id="offer-role" placeholder="Technical Trainer" /></div>
+            <div class="form-group"><label class="form-label">Department</label><input class="form-input" id="offer-dept" placeholder="Computer Science & Engineering" /></div>
+            <div class="form-group"><label class="form-label">Reporting To</label><input class="form-input" id="offer-mgr" placeholder="Head of the Department" /></div>
+            <div class="form-group"><label class="form-label">Contract Start Date</label><input class="form-input" id="offer-date" type="date" /></div>
+            <div class="form-group"><label class="form-label">Contract End Date</label><input class="form-input" id="offer-enddate" type="date" /></div>
+            <div class="form-group"><label class="form-label">Monthly CTC (₹)</label><input class="form-input" id="offer-ctc" placeholder="46666" /></div>
+            <div class="form-group"><label class="form-label">CHRO / Signing Authority</label><input class="form-input" id="offer-chro" value="Dr. Ashish Mittal" /></div>
           </div>
-          <button class="btn-primary" style="width:auto;padding:10px 24px;margin-top:8px" onclick="generatePDF('offer')">⬇ Generate Offer Letter PDF</button>
+          <div style="font-size:11px;font-weight:600;color:var(--text-muted);letter-spacing:0.8px;text-transform:uppercase;margin:12px 0 10px">Candidate Address</div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Address Line 1</label><input class="form-input" id="offer-addr1" placeholder="1-120/C, Annarugudem," /></div>
+            <div class="form-group"><label class="form-label">Address Line 2 (City, State)</label><input class="form-input" id="offer-addr2" placeholder="Tallada, Khammam, AP - 507167" /></div>
+            <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="offer-email" type="email" placeholder="candidate@email.com" /></div>
+          </div>
+          <div style="background:rgba(29,158,117,0.06);border:1px solid rgba(29,158,117,0.15);border-radius:8px;padding:10px 14px;margin-top:8px;font-size:12px;color:var(--text-muted)">
+            📄 Generates 2 pages: Contract Letter + Annexure-I (Compensation Plan) — matching Sreenidhi University format
+          </div>
+          <button class="btn-primary" style="width:auto;padding:10px 24px;margin-top:12px" onclick="generatePDF('offer')">⬇ Generate Contract + Annexure PDF</button>
         </div>
+
+        <!-- ── APPOINTMENT LETTER FORM ── -->
         <div id="doc-form-appointment" style="display:none">
           <div class="form-row">
             <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" id="appt-name" placeholder="Rahul Gupta" /></div>
@@ -1053,7 +1098,7 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
     <div class="panel" id="panel-selfservice">
       <div class="card" style="margin-bottom:20px">
         <div style="display:flex;align-items:center;gap:16px">
-          <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--blue));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700">AM</div>
+          <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--blue));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700" id="portal-avatar">AM</div>
           <div>
             <div style="font-size:18px;font-weight:700" id="portal-user-name">Aarav Mehta</div>
             <div style="font-size:12px;color:var(--text-muted)">EMP-0042 · Sr. React Developer · Engineering</div>
@@ -1615,7 +1660,9 @@ function demoLogin(email) {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = 'flex';
   const name = email.split('@')[0];
-  document.getElementById('topbar-user-name').textContent = name;
+  const _ini = name.replace(/[^a-zA-Z ]/g,' ').trim().split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||name.slice(0,2).toUpperCase();
+  document.getElementById('topbar-user-name').textContent = _ini;
+  const _pav = document.getElementById('portal-avatar'); if(_pav)_pav.textContent=_ini;
   document.getElementById('sidebar-user-name').textContent = name;
   document.getElementById('portal-user-name').textContent = name;
   showToast('Welcome to SmartHR! (Demo mode)', 'success');
@@ -2108,154 +2155,568 @@ function selectDocType(card, type) {
 }
 
 async function generatePDF(type) {
-  // Lazy-load jsPDF (avoids tracking-prevention blocking of eager script load)
-  try {
-    await window._loadJsPDF();
-  } catch(e) {
-    showToast('Could not load PDF library. Check your network / tracker settings.','error');
-    return;
-  }
-  if (typeof window.jspdf === 'undefined' && typeof window.jsPDF === 'undefined') {
-    showToast('jsPDF unavailable. Please try again.','error');
-    return;
+  try { await window._loadJsPDF(); } catch(e) {
+    showToast('PDF library failed to load. Check network/tracker settings.','error'); return;
   }
   const { jsPDF } = window.jspdf || window;
-  const doc = new jsPDF();
+  if (!jsPDF) { showToast('jsPDF unavailable.','error'); return; }
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
 
-  const navy = [10, 22, 40];
-  const accent = [29, 158, 117];
-  const gold = [239, 159, 39];
-  const gray = [120, 130, 150];
+  // ── Shared helpers ────────────────────────────────────────────────
+  const W = 210, H = 297;
+  const BLK=[0,0,0], WHT=[255,255,255], GRY=[180,180,180], LGRY=[245,245,245];
+  const HDR=[30,80,50];  // dark green header like Sreenidhi
+  const SUBHDR=[60,110,80]; // lighter green for sub-headers
+  const TBHDR=[200,220,210]; // table header bg
 
+  function hline(y, lx, rx, thick=0.2, col=BLK) {
+    doc.setDrawColor(...col); doc.setLineWidth(thick);
+    doc.line(lx,y,rx,y);
+  }
+  function vline(x, ty, by, thick=0.2, col=BLK) {
+    doc.setDrawColor(...col); doc.setLineWidth(thick);
+    doc.line(x,ty,x,by);
+  }
+  function rect(x,y,w,h,fillCol,drawCol,thick=0.3) {
+    if(fillCol){ doc.setFillColor(...fillCol); doc.rect(x,y,w,h,'F'); }
+    if(drawCol){ doc.setDrawColor(...drawCol); doc.setLineWidth(thick); doc.rect(x,y,w,h,'S'); }
+  }
+  function txt(text, x, y, opts={}) {
+    const {size=9, bold=false, color=BLK, align='left'} = opts;
+    doc.setFontSize(size); doc.setFont('helvetica', bold?'bold':'normal');
+    doc.setTextColor(...color);
+    doc.text(String(text||''), x, y, {align});
+  }
+  function cell(text, x, y, w, h, opts={}) {
+    const {fill=null, border=true, bold=false, size=9, color=BLK, align='left', pad=2} = opts;
+    if(fill) { doc.setFillColor(...fill); doc.rect(x,y,w,h,'F'); }
+    if(border) { doc.setDrawColor(...GRY); doc.setLineWidth(0.2); doc.rect(x,y,w,h,'S'); }
+    doc.setFontSize(size); doc.setFont('helvetica',bold?'bold':'normal');
+    doc.setTextColor(...color);
+    const tx = align==='right'?x+w-pad : align==='center'?x+w/2 : x+pad;
+    doc.text(String(text||''), tx, y+h*0.62, {align});
+  }
+  function inr(n) { return parseInt(n||0).toLocaleString('en-IN'); }
+
+  // ════════════════════════════════════════════════════════════════
+  //  PAYSLIP — Sreenidhi University reference style
+  // ════════════════════════════════════════════════════════════════
   if (type === 'payslip') {
-    const empName = document.getElementById('pdf-emp-name')?.value || 'Aarav Mehta';
-    const empId = document.getElementById('pdf-emp-id')?.value || 'EMP-0042';
-    const dept = document.getElementById('pdf-dept')?.value || 'Engineering';
-    const month = document.getElementById('pdf-month')?.value || 'October 2024';
-    const basic = parseInt(document.getElementById('pdf-basic')?.value || '65000');
-    const hra = parseInt(document.getElementById('pdf-hra')?.value || '26000');
-    const special = 12000, bonus = 8000, tds = 11200, pf = 7800;
-    const gross = basic + hra + special + bonus;
-    const net = gross - tds - pf;
+    const empName  = document.getElementById('pdf-emp-name')?.value  || 'Aarav Mehta';
+    const empId    = document.getElementById('pdf-emp-id')?.value    || 'EMP-0042';
+    const dept     = document.getElementById('pdf-dept')?.value      || 'Engineering';
+    const month    = document.getElementById('pdf-month')?.value     || 'May 2026';
+    const basic    = parseInt(document.getElementById('pdf-basic')?.value  || '13333');
+    const da       = parseInt(document.getElementById('pdf-da')?.value     || '12000');
+    const hra      = parseInt(document.getElementById('pdf-hra')?.value    || '1333');
+    const special  = parseInt(document.getElementById('pdf-special')?.value|| '4867');
+    const pf       = parseInt(document.getElementById('pdf-pf')?.value     || '1800');
+    const profTax  = parseInt(document.getElementById('pdf-ptax')?.value   || '200');
+    const desg     = document.getElementById('pdf-desg')?.value      || 'Lab Assistant';
+    const empGroup = document.getElementById('pdf-empgrp')?.value    || 'Non-Teaching';
+    const bankAcc  = document.getElementById('pdf-bank')?.value      || '';
+    const bankName = document.getElementById('pdf-bankname')?.value  || 'Axis Bank';
+    const pan      = document.getElementById('pdf-pan')?.value       || '';
+    const ifsc     = document.getElementById('pdf-ifsc')?.value      || '';
+    const totalEarnings = basic + da + hra + special;
+    const totalDeductions = pf + profTax;
+    const netPay = totalEarnings - totalDeductions;
+    const companyName = document.getElementById('pdf-company')?.value || 'SmartHR Technologies';
+    const companyAddr = document.getElementById('pdf-addr')?.value   || 'Hyderabad, Telangana';
 
-    doc.setFillColor(...navy); doc.rect(0,0,210,297,'F');
-    doc.setFillColor(...accent); doc.rect(0,0,210,40,'F');
-    doc.setTextColor(255,255,255); doc.setFontSize(22); doc.setFont('helvetica','bold');
-    doc.text('SmartHR', 20, 22);
-    doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.text('AI-POWERED HR PORTAL', 20, 30);
-    doc.setFontSize(14); doc.text('PAYSLIP', 160, 20);
-    doc.setFontSize(10); doc.text(month, 160, 28);
-    doc.setTextColor(...navy); doc.setFillColor(240,245,255); doc.roundedRect(15,48,180,30,3,3,'F');
-    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(20,30,50);
-    doc.text(empName, 22, 58); doc.setFontSize(9); doc.setFont('helvetica','normal');
-    doc.setTextColor(...gray); doc.text(empId + '  |  ' + dept, 22, 66);
-    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(20,30,50);
-    doc.text('EARNINGS', 20, 90); doc.text('AMOUNT (₹)', 155, 90);
-    doc.setFillColor(...accent); doc.rect(15,92,180,1,'F');
-    const rows = [['Basic Salary', basic],['HRA', hra],['Special Allowance', special],['Performance Bonus', bonus]];
-    let y = 100;
-    rows.forEach(([l,v]) => {
-      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(50,60,80);
-      doc.text(l, 22, y); doc.text('+ ' + v.toLocaleString('en-IN'), 155, y);
-      y += 9;
-    });
-    doc.setFillColor(220,230,240); doc.rect(15,y,180,8,'F');
-    doc.setFont('helvetica','bold'); doc.setTextColor(20,30,50);
-    doc.text('Gross Total', 22, y+6); doc.text(gross.toLocaleString('en-IN'), 155, y+6); y += 18;
-    doc.text('DEDUCTIONS', 20, y); doc.text('AMOUNT (₹)', 155, y); y += 4;
-    doc.setFillColor(...gold); doc.rect(15,y,180,1,'F'); y += 8;
-    [['Income Tax (TDS)', tds],['Provident Fund (PF)', pf]].forEach(([l,v]) => {
-      doc.setFont('helvetica','normal'); doc.setTextColor(50,60,80);
-      doc.text(l, 22, y); doc.text('- ' + v.toLocaleString('en-IN'), 155, y); y += 9;
-    });
-    doc.setFillColor(...accent); doc.rect(15,y,180,12,'F');
-    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(12);
-    doc.text('NET PAY', 22, y+8); doc.text('₹ ' + net.toLocaleString('en-IN'), 145, y+8); y += 25;
-    doc.setTextColor(...gray); doc.setFontSize(8); doc.setFont('helvetica','normal');
-    doc.text('This is a computer-generated payslip. No signature required.', 105, y, {align:'center'});
-    doc.save(`Payslip_${empName.replace(' ','_')}_${month}.pdf`);
+    // ── LOGO / HEADER ──
+    rect(0, 0, W, 28, HDR, null);
+    // Company name (bold white, centered-ish)
+    txt(companyName, W/2, 11, {size:16, bold:true, color:WHT, align:'center'});
+    txt(companyAddr, W/2, 17, {size:9, color:[210,235,220], align:'center'});
+    txt('Payslip for the Month- ' + month, W/2, 23, {size:10, bold:true, color:WHT, align:'center'});
 
+    // ── INFO TABLE ──
+    let y = 30;
+    rect(14, y, W-28, 30, null, [100,100,100]);
+    // Left col
+    const info = [
+      ['Employee Code', empId], ['Name', empName], ['Emp.Group', empGroup], ['Gender', 'Male']
+    ];
+    const info2 = [
+      ['Designation', desg], ['Department', dept], ['Bank Name', bankName], ['Bank A/c No', bankAcc||'—']
+    ];
+    const info3 = [
+      ['IFSC No', ifsc||'—'], ['UAN No', ''], ['PAN No', pan||'—'], ['ESI No', '']
+    ];
+    const iH = 6.5, iX = 14;
+    info.forEach(([l,v],i) => {
+      txt(l, iX+1.5, y+3+i*iH, {size:8, bold:true});
+      txt(': '+v, iX+28, y+3+i*iH, {size:8});
+    });
+    info2.forEach(([l,v],i) => {
+      txt(l, iX+68, y+3+i*iH, {size:8, bold:true});
+      txt(': '+v, iX+92, y+3+i*iH, {size:8});
+    });
+    info3.forEach(([l,v],i) => {
+      txt(l, iX+130, y+3+i*iH, {size:8, bold:true});
+      txt(': '+v, iX+150, y+3+i*iH, {size:8});
+    });
+    vline(iX+66, y, y+30, 0.2, GRY);
+    vline(iX+128, y, y+30, 0.2, GRY);
+    y += 32;
+
+    // ── TAKE HOME BOX ──
+    rect(14, y, W-28, 10, LGRY, GRY);
+    txt('Take Home Pay = Total Earnings + Total Arrears - Total deductions', 16, y+4, {size:8});
+    txt(`${inr(netPay)} = ${inr(totalEarnings)} + 0.00 - ${inr(totalDeductions)}`, 16, y+8, {size:8, bold:true});
+    y += 12;
+
+    // ── EARNINGS TABLE HEADER ──
+    const LX=14, RX=W-14, TW=RX-LX;
+    const c1=14, c2=62, c3=90, c4=120, c5=150; // col x positions
+    const cW1=48, cW2=28, cW3=30, cW4=30, cW5=32; // widths
+    const tHdr=8;
+
+    // header row
+    rect(LX, y, TW, tHdr, [60,100,80], GRY);
+    txt('Description', c1+2, y+5.5, {size:8, bold:true, color:WHT});
+    txt('Gross', c2+2, y+5.5, {size:8, bold:true, color:WHT});
+    txt('Earnings', c3+2, y+5.5, {size:8, bold:true, color:WHT});
+    // Arrears merged header
+    rect(c4, y, cW4+cW5, tHdr, [60,100,80], null);
+    txt('Arrears', c4+18, y+5.5, {size:8, bold:true, color:WHT});
+    rect(c4+cW4+cW5, y, TW-(c4-LX)-cW4-cW5, tHdr, [80,60,60], null);
+    txt('Deductions', c4+cW4+cW5+4, y+5.5, {size:8, bold:true, color:WHT});
+    // Sub-header
+    y += tHdr;
+    rect(LX, y, TW, tHdr-2, [200,220,210], GRY);
+    txt('Description', c1+2, y+4.5, {size:7.5, bold:true});
+    txt('Amount', c2+2, y+4.5, {size:7.5, bold:true});
+    txt('Description', c3+2, y+4.5, {size:7.5, bold:true});
+    txt('Amount', c4+2, y+4.5, {size:7.5, bold:true});
+    txt('Description', c4+cW4+cW5+2, y+4.5, {size:7.5, bold:true});
+    txt('Amount', c4+cW4+cW5+cW5+2, y+4.5, {size:7.5, bold:true});
+    y += tHdr-2;
+
+    // Draw vertical dividers for table
+    const tRowH = 7;
+    const earningRows = [
+      ['Basic Salary', basic, '0.00'],
+      ['DA', da, '0.00'],
+      ['HRA', hra, '0.00'],
+      ['Special Allowance', special, '0.00'],
+    ];
+    const dedRows = [
+      ['Ee PF contribution', pf],
+      ['Prof Tax - split period', profTax],
+    ];
+    const maxRows = Math.max(earningRows.length, dedRows.length);
+    const tStartY = y;
+
+    earningRows.forEach(([desc, gross, arr], i) => {
+      const ry = y + i*tRowH;
+      if(i%2===1) rect(LX, ry, TW, tRowH, LGRY, null);
+      rect(LX, ry, TW, tRowH, null, GRY, 0.15);
+      txt(desc, c1+2, ry+4.8, {size:8});
+      txt(inr(gross), c2+2, ry+4.8, {size:8});
+      txt(inr(gross), c3+2, ry+4.8, {size:8});
+      txt(arr, c4+2, ry+4.8, {size:8});
+    });
+    dedRows.forEach(([desc, amt], i) => {
+      const ry = y + i*tRowH;
+      txt(desc, c4+cW4+cW5+2, ry+4.8, {size:8});
+      txt(inr(amt), c4+cW4+cW5+cW5+2, ry+4.8, {size:8});
+    });
+
+    y += maxRows * tRowH;
+    // Totals row
+    rect(LX, y, TW, tRowH+1, [200,220,210], GRY);
+    txt('Total Earnings', c1+2, y+5.5, {size:8, bold:true});
+    txt(inr(totalEarnings), c2+2, y+5.5, {size:8, bold:true});
+    txt(inr(totalEarnings), c3+2, y+5.5, {size:8, bold:true});
+    txt('Total Arrears', c4+2, y+5.5, {size:8});
+    txt('0.00', c4+cW4+2, y+5.5, {size:8});
+    txt('Total deductions', c4+cW4+cW5+2, y+5.5, {size:8, bold:true});
+    txt(inr(totalDeductions), c4+cW4+cW5+cW5+2, y+5.5, {size:8, bold:true});
+    y += tRowH+1;
+
+    // Net pay row
+    rect(LX, y, TW, 9, [40,80,60], GRY);
+    const netWords = 'NET PAY: ' + inr(netPay);
+    txt('Take Home Pay : ' + inr(netPay) + '  (' + numberToWords(netPay).toUpperCase() + ' RUPEES)', 
+        W/2, y+5.8, {size:8.5, bold:true, color:WHT, align:'center'});
+    y += 11;
+
+    // ── BOTTOM SECTION ── (3-col: Arrears | Working Details | Form 16)
+    const botY = y, botH = 55;
+    const b1X=LX, b1W=40, b2X=LX+40, b2W=60, b3X=LX+100, b3W=TW-100;
+
+    // Arrears section
+    rect(b1X, botY, b1W, botH, null, GRY);
+    rect(b1X, botY, b1W, 7, TBHDR, GRY);
+    txt('Sum of Arrears', b1X+2, botY+4.8, {size:7.5, bold:true});
+    txt('Month', b1X+2, botY+13, {size:7.5, bold:true});
+    txt('Sum Of Amount', b1X+2, botY+19, {size:7.5, bold:true});
+
+    // Working Details
+    rect(b2X, botY, b2W, botH, null, GRY);
+    rect(b2X, botY, b2W, 7, TBHDR, GRY);
+    txt('Working Details', b2X+2, botY+4.8, {size:7.5, bold:true});
+    const wdRows = [['Month Days','31.00'],['Absences','0.00'],['Payable Days','31.00']];
+    wdRows.forEach(([l,v],i) => {
+      txt(l, b2X+2, botY+14+i*10, {size:8});
+      txt(v, b2X+b2W-20, botY+14+i*10, {size:8, bold:true});
+      hline(botY+8+i*10, b2X, b2X+b2W, 0.15, GRY);
+    });
+
+    // Form 16 Summary
+    rect(b3X, botY, b3W, botH, null, GRY);
+    rect(b3X, botY, b3W, 7, TBHDR, GRY);
+    txt('Form 16 Summary', b3X+2, botY+4.8, {size:7.5, bold:true});
+    const grossSalary = parseInt(totalEarnings*12);
+    const f16Rows = [
+      ['Gross Salary', inr(grossSalary)],
+      ['Std Deduction', '75,000'],
+      ['Exemption U/S10', '0.00'],
+      ['Balance', inr(grossSalary)],
+      ['Emp mnt tax(Prof Tax)', '0.00'],
+      ['Aggrg Deduction', '75,000'],
+      ['Incm under Hd Salary', inr(grossSalary-75000)],
+      ['Total Income', inr(Math.max(0,grossSalary-75000))],
+      ['Income Tax', '0'],
+    ];
+    f16Rows.forEach(([l,v],i) => {
+      if(l==='Total Income') doc.setFont('helvetica','bold');
+      txt(l, b3X+2, botY+12+i*4.8, {size:7});
+      txt(v, b3X+b3W-2, botY+12+i*4.8, {size:7, bold:l==='Total Income', align:'right'});
+    });
+
+    y = botY + botH + 5;
+    rect(LX, y, TW, 7, null, GRY);
+    txt('This Payslip is computer generated and does not require any signature', 
+        W/2, y+4.8, {size:7.5, color:[80,80,80], align:'center'});
+
+    doc.save('Payslip_' + empName.replace(/ /g,'_') + '_' + month.replace(/ /g,'-') + '.pdf');
+
+  // ════════════════════════════════════════════════════════════════
+  //  CONTRACT / OFFER LETTER — Sreenidhi reference style (white, formal)
+  // ════════════════════════════════════════════════════════════════
   } else if (type === 'offer') {
-    const name = document.getElementById('offer-name')?.value || 'Candidate';
-    const role = document.getElementById('offer-role')?.value || 'Software Engineer';
-    const dept = document.getElementById('offer-dept')?.value || 'Engineering';
-    const date = document.getElementById('offer-date')?.value || new Date().toLocaleDateString();
-    const ctc = parseInt(document.getElementById('offer-ctc')?.value || '1200000');
-    const mgr = document.getElementById('offer-mgr')?.value || 'HR Manager';
+    const name   = document.getElementById('offer-name')?.value   || 'Candidate Name';
+    const role   = document.getElementById('offer-role')?.value   || 'Technical Trainer';
+    const dept   = document.getElementById('offer-dept')?.value   || 'Computer Science & Engineering';
+    const doj    = document.getElementById('offer-date')?.value   || '01-Jan-2026';
+    const doe    = document.getElementById('offer-enddate')?.value|| '30-Jun-2026';
+    const ctcM   = parseInt(document.getElementById('offer-ctc')?.value   || '46666');
+    const mgr    = document.getElementById('offer-mgr')?.value    || 'Head of the Department';
+    const chro   = document.getElementById('offer-chro')?.value   || 'Dr. Ashish Mittal';
+    const companyName = document.getElementById('pdf-company')?.value || 'SmartHR Technologies';
+    const companyAddr = document.getElementById('pdf-addr')?.value   || 'Hyderabad, Telangana';
+    const today = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
 
-    doc.setFillColor(...navy); doc.rect(0,0,210,297,'F');
-    doc.setFillColor(...accent); doc.rect(0,0,210,35,'F');
-    doc.setTextColor(255,255,255); doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.text('SmartHR', 20,20);
-    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.text('AI-Powered HR Portal  |  hr@smarthr.com', 20,28);
-    doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.text('OFFER OF EMPLOYMENT', 105,50,{align:'center'});
-    doc.setFillColor(...accent); doc.rect(80,53,50,1,'F');
-    doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(200,215,230);
-    doc.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, 20, 65);
-    doc.text(`Ref: OFR-${Math.floor(Math.random()*9000+1000)}`, 140, 65);
-    doc.setTextColor(220,235,255); doc.setFontSize(11); doc.setFont('helvetica','bold');
-    doc.text(`Dear ${name},`, 20, 80);
-    doc.setFont('helvetica','normal'); doc.setFontSize(10);
-    const body = `We are pleased to offer you the position of ${role} in the ${dept} department at SmartHR Technologies Pvt. Ltd. After reviewing your application and interviews, we believe you will be a valuable addition to our team.`;
-    const lines = doc.splitTextToSize(body, 170);
-    doc.text(lines, 20, 92);
-    const details = [['Position:', role],['Department:', dept],['Date of Joining:', date],['Reporting To:', mgr],['Annual CTC:', '₹ ' + ctc.toLocaleString('en-IN')]];
-    let y = 118;
-    doc.setFillColor(15,32,64); doc.roundedRect(15,y-6,180,details.length*10+10,3,3,'F');
-    details.forEach(([l,v]) => {
-      doc.setFont('helvetica','bold'); doc.setTextColor(...accent); doc.text(l, 22, y);
-      doc.setFont('helvetica','normal'); doc.setTextColor(220,235,255); doc.text(v, 80, y);
-      y += 10;
+    // Address block — candidate
+    const addr1 = document.getElementById('offer-addr1')?.value || '1-120/C, Sector 5,';
+    const addr2 = document.getElementById('offer-addr2')?.value || 'City, State.';
+    const email = document.getElementById('offer-email')?.value || '';
+
+    // WHITE background
+    rect(0, 0, W, H, WHT, null);
+
+    // Logo header area (right-aligned logo block)
+    rect(0, 0, W, 35, WHT, null);
+    // Green accent line at top
+    rect(0, 0, W, 2, [30,100,60], null);
+    // Company name right side
+    txt(companyName, W-14, 12, {size:18, bold:true, color:HDR, align:'right'});
+    txt(companyAddr, W-14, 18, {size:8, color:[80,80,80], align:'right'});
+    txt('KINDLE THE LIGHT WITHIN', W-14, 23, {size:7, color:[120,120,120], align:'right'});
+    // Green underline
+    rect(0, 34, W, 0.5, HDR, null);
+
+    // Date (right)
+    txt(today, W-14, 44, {size:9, align:'right', color:[60,60,60]});
+
+    // Candidate address block (left)
+    let y = 44;
+    txt(name, 14, y, {size:9, bold:true});
+    txt(addr1, 14, y+5, {size:9});
+    txt(addr2, 14, y+10, {size:9});
+    if(email) txt('Email: ' + email, 14, y+16, {size:9, bold:true});
+
+    y += 28;
+
+    // TITLE
+    doc.setDrawColor(30,100,60); doc.setLineWidth(0.5);
+    doc.line(W/2-35, y, W/2+35, y);
+    txt('Contract Letter', W/2, y+6, {size:13, bold:true, color:BLK, align:'center'});
+    doc.line(W/2-35, y+8, W/2+35, y+8);
+    y += 16;
+
+    // Greeting
+    txt('Dear ' + name.split(' ').slice(-1)[0] + ',', 14, y, {size:10, bold:true});
+    y += 7;
+
+    // Opening para
+    const opening = doc.splitTextToSize(
+      `We are pleased to offer you a Contract as a ${role} in the Department of ${dept} at ${companyName} commencing from ${doj} till ${doe} on the following terms and conditions:`,
+      W-28);
+    txt(opening.join('\n'), 14, y, {size:9.5, color:[30,30,30]});
+    y += opening.length * 5 + 4;
+
+    // Terms
+    const terms = [
+      `You will be reporting to the ${mgr}.`,
+      `Your detailed compensation structure is enclosed as Annexure\u2013I with this Contract Letter. Please refer to the annexure for a comprehensive breakup of your salary and benefits.`,
+      `You will be required to work 5 (five) days in a week and mark your attendance on a daily basis.`,
+      `You will be eligible for the leaves as per the University Leave Policy.`,
+      `You will be liable to adhere to the applicable rules and regulations of ${companyName} as notified from time to time.`,
+      `You will keep the information relating to your contract strictly confidential.`,
+      `This contract can be terminated by either party by giving one (1) month of notice in writing by way of an email.`,
+      `This contract can be further renewed on a mutual consent.`,
+      `As a confirmation of your acceptance of this letter, please sign and e-mail the scanned copy of this letter within four (4) calendar days to the undersigned.`,
+      `Your compensation details are strictly confidential and must not be discussed with anyone other than your Reporting Manager & HR.`,
+    ];
+    const abc = ['a','b','c','d','e','f','g','h','i','j','k','l','m'];
+    terms.forEach((t,i) => {
+      const wrapped = doc.splitTextToSize(t, W-36);
+      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30);
+      doc.text(abc[i]+')', 16, y);
+      doc.text(wrapped, 23, y);
+      y += wrapped.length * 4.8 + 1.5;
+      if(y > H-50) { doc.addPage(); y=20; }
     });
-    y += 10;
-    doc.setTextColor(180,200,220); doc.setFontSize(9);
-    doc.text('This offer is subject to satisfactory background verification and reference checks.', 20, y);
-    doc.text('Please confirm acceptance within 7 days.', 20, y+8);
-    y += 25; doc.setFillColor(...accent); doc.rect(15,y,180,1,'F');
-    y += 10; doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255); doc.text('HR Department', 20, y);
-    doc.setFont('helvetica','normal'); doc.setTextColor(180,200,220); doc.text('SmartHR Technologies Pvt. Ltd.', 20, y+7);
-    doc.save(`Offer_Letter_${name.replace(' ','_')}.pdf`);
 
+    y += 4;
+    const closing = doc.splitTextToSize(
+      `We look forward to welcoming you in ${companyName} and we hope that this association will be mutually beneficial.`,
+      W-28);
+    txt(closing.join('\n'), 14, y, {size:9.5});
+    y += closing.length*5 + 8;
+
+    txt('Best Wishes,', 14, y, {size:9});
+    txt('For ' + companyName, 14, y+5, {size:9, bold:true});
+    y += 22;
+    // Signature line
+    doc.setDrawColor(...BLK); doc.setLineWidth(0.3);
+    doc.line(14, y, 70, y);
+    y += 4;
+    txt(chro, 14, y, {size:9, bold:true});
+    txt('Group - CHRO', 14, y+5, {size:9});
+    y += 16;
+
+    rect(14, y, W-28, 0.4, [200,200,200], null);
+    y += 5;
+    txt('I have read and understood the contract and its related terms and conditions and accept it fully.', 14, y, {size:8.5});
+    y += 8;
+    txt('Name and Signature', 14, y, {size:9});
+    doc.line(14+35, y, 14+75, y);
+    txt('Date', 100, y, {size:9});
+    doc.line(100+12, y, 100+45, y);
+    txt('Location', 160, y, {size:9});
+    doc.line(160+16, y, W-14, y);
+
+    // ── Page 2: Annexure-I (Compensation Plan) ──
+    doc.addPage();
+    rect(0, 0, W, H, WHT, null);
+    rect(0, 0, W, 2, [30,100,60], null);
+    txt(companyName, W-14, 12, {size:16, bold:true, color:HDR, align:'right'});
+    rect(0, 26, W, 0.5, HDR, null);
+
+    y = 36;
+    doc.line(W/2-30, y, W/2+30, y);
+    txt('Annexure - I', W/2, y+6, {size:13, bold:true, align:'center'});
+    doc.line(W/2-30, y+8, W/2+30, y+8);
+    y += 18;
+
+    // Compensation Plan header
+    rect(14, y, W-28, 9, HDR, GRY);
+    txt('Compensation Plan', W/2, y+6, {size:11, bold:true, color:WHT, align:'center'});
+    y += 9;
+
+    const infoRows = [['Name', name],['Department', dept],['Designation', role],['Contract Period', doj + ' to ' + doe]];
+    infoRows.forEach(([l,v],i) => {
+      rect(14, y, 65, 8, i%2===0?LGRY:WHT, GRY);
+      rect(79, y, W-14-79, 8, i%2===0?LGRY:WHT, GRY);
+      txt(l, 16, y+5.5, {size:9, bold:true});
+      txt(v, 81, y+5.5, {size:9});
+      y+=8;
+    });
+    y+=4;
+
+    // Monthly components header
+    rect(14, y, W-28, 8, [150,200,175], GRY);
+    txt('Monthly Components (in \u20B9)', W/2, y+5.5, {size:9, bold:true, align:'center'});
+    y+=8;
+
+    const basic2 = parseInt(ctcM * 0.42);
+    const da2    = parseInt(ctcM * 0.38);
+    const hra2   = parseInt(ctcM * 0.042);
+    const spl2   = parseInt(ctcM * 0.154);
+    const pf2    = 1800;
+
+    const compRows = [
+      ['Basic Salary', basic2],
+      ['DA', da2],
+      ['HRA', hra2],
+      ['Special Allowance', spl2],
+      ['Employee Contribution to Provident Fund', pf2],
+    ];
+    compRows.forEach(([l,v],i) => {
+      rect(14, y, W-28-40, 8, i%2===0?LGRY:WHT, GRY);
+      rect(14+W-28-40, y, 40, 8, i%2===0?LGRY:WHT, GRY);
+      txt(l, 16, y+5.5, {size:9});
+      txt(inr(v), 14+W-28-38, y+5.5, {size:9, align:'right'});
+      y+=8;
+    });
+    // Total row
+    rect(14, y, W-28-40, 9, [30,100,60], GRY);
+    rect(14+W-28-40, y, 40, 9, [30,100,60], GRY);
+    txt('Total CTU \u2013 Per Month', 16, y+6, {size:9, bold:true, color:WHT});
+    txt(inr(ctcM), 14+W-28-38, y+6, {size:9, bold:true, color:WHT, align:'right'});
+    y+=11;
+
+    // Insurance section
+    rect(14, y, W-28, 8, [150,200,175], GRY);
+    txt('Insurance & Medical Benefits', W/2, y+5.5, {size:9, bold:true, align:'center'});
+    y+=8;
+    rect(14, y, W-28-60, 14, WHT, GRY);
+    rect(14+W-28-60, y, 60, 14, WHT, GRY);
+    txt('Hospitalization Expense Reimbursement Limit\n(for self, spouse & 2 dependent children)', 16, y+5, {size:8});
+    txt('As per University\nInsurance policy.', 14+W-28-58, y+5, {size:8});
+    y+=14;
+    rect(14, y, W-28-60, 8, LGRY, GRY);
+    rect(14+W-28-60, y, 60, 8, LGRY, GRY);
+    txt('Additionally Group Personal Accident (for self)', 16, y+5.5, {size:8});
+    y+=10;
+
+    // Notes
+    txt('Notes:', 14, y, {size:9, bold:true}); y+=5;
+    ['This compensation plan is governed by '+companyName+'.',
+     'This annexure is strictly confidential and must not be discussed with anyone other than your Reporting Manager & HR.',
+     'Any personal tax liability arising out of compensation will be borne solely by you.'
+    ].forEach((n,i)=>{ txt((i+1)+') '+n, 16, y, {size:8.5, bold:i===1}); y+=6; });
+
+    y+=10;
+    doc.line(14, y, 70, y); doc.line(W-70, y, W-14, y);
+    y+=5;
+    txt('Signature:', 14, y, {size:9}); txt('Signature:', W-70, y, {size:9});
+    y+=5;
+    txt(chro, 14, y, {size:9, bold:true}); txt(name, W-70, y, {size:9, bold:true});
+    txt('Group - CHRO', 14, y+5, {size:8});
+
+    // Footer
+    rect(0, H-18, W, 18, [245,245,245], null);
+    rect(0, H-18, W, 0.4, [200,200,200], null);
+    txt('Campus: ' + companyAddr, W/2, H-12, {size:7, color:[100,100,100], align:'center'});
+    txt('www.smarthr.com', W/2, H-7, {size:7, color:[30,100,60], align:'center'});
+
+    doc.save('Contract_Letter_' + name.replace(/ /g,'_') + '.pdf');
+
+  // ════════════════════════════════════════════════════════════════
+  //  APPOINTMENT LETTER — formal white style
+  // ════════════════════════════════════════════════════════════════
   } else if (type === 'appointment') {
-    const name = document.getElementById('appt-name')?.value || 'Employee';
-    const desg = document.getElementById('appt-desg')?.value || 'Software Engineer';
-    const dept = document.getElementById('appt-dept')?.value || 'Engineering';
-    const doj = document.getElementById('appt-doj')?.value || new Date().toLocaleDateString();
-    const eid = document.getElementById('appt-id')?.value || 'EMP-0001';
-    const ctc = parseInt(document.getElementById('appt-ctc')?.value || '1200000');
+    const name  = document.getElementById('appt-name')?.value  || 'Employee Name';
+    const desg  = document.getElementById('appt-desg')?.value  || 'Software Engineer';
+    const dept  = document.getElementById('appt-dept')?.value  || 'Engineering';
+    const doj   = document.getElementById('appt-doj')?.value   || '01-Jan-2026';
+    const eid   = document.getElementById('appt-id')?.value    || 'EMP-0001';
+    const ctc   = parseInt(document.getElementById('appt-ctc')?.value || '1200000');
+    const companyName = document.getElementById('pdf-company')?.value || 'SmartHR Technologies';
+    const companyAddr = document.getElementById('pdf-addr')?.value   || 'Hyderabad, Telangana';
+    const today = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
 
-    doc.setFillColor(...navy); doc.rect(0,0,210,297,'F');
-    doc.setFillColor(...accent); doc.rect(0,0,210,35,'F');
-    doc.setTextColor(255,255,255); doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.text('SmartHR', 20,20);
-    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.text('AI-Powered HR Portal', 20,28);
-    doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.text('APPOINTMENT LETTER', 105,50,{align:'center'});
-    doc.setFillColor(...accent); doc.rect(80,53,50,1,'F');
-    doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(200,215,230);
-    doc.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, 20, 65);
-    doc.text(`Emp ID: ${eid}`, 140, 65);
-    doc.setTextColor(220,235,255); doc.setFontSize(11); doc.setFont('helvetica','bold');
-    doc.text(`Dear ${name},`, 20, 80);
-    doc.setFont('helvetica','normal'); doc.setFontSize(10);
-    const apptBody = `This is to confirm your appointment as ${desg} in the ${dept} department of SmartHR Technologies Pvt. Ltd. with effect from ${doj}.`;
-    doc.text(doc.splitTextToSize(apptBody, 170), 20, 92);
-    const info = [['Employee ID:',eid],['Designation:',desg],['Department:',dept],['Date of Joining:',doj],['Annual CTC:','₹ ' + ctc.toLocaleString('en-IN')],['Probation Period:','6 months']];
-    let y = 115;
-    doc.setFillColor(15,32,64); doc.roundedRect(15,y-6,180,info.length*10+10,3,3,'F');
-    info.forEach(([l,v]) => {
-      doc.setFont('helvetica','bold'); doc.setTextColor(...accent); doc.text(l, 22, y);
-      doc.setFont('helvetica','normal'); doc.setTextColor(220,235,255); doc.text(v, 80, y);
-      y += 10;
+    rect(0, 0, W, H, WHT, null);
+    rect(0, 0, W, 2, [30,100,60], null);
+    txt(companyName, W-14, 12, {size:16, bold:true, color:HDR, align:'right'});
+    txt(companyAddr, W-14, 18, {size:8, color:[80,80,80], align:'right'});
+    rect(0, 27, W, 0.5, HDR, null);
+
+    let y = 38;
+    txt(today, W-14, y, {size:9, align:'right', color:[60,60,60]});
+    txt('Ref: ' + eid, 14, y, {size:9});
+
+    y += 12;
+    doc.line(W/2-40, y, W/2+40, y);
+    txt('APPOINTMENT LETTER', W/2, y+6, {size:13, bold:true, align:'center'});
+    doc.line(W/2-40, y+8, W/2+40, y+8);
+    y += 18;
+
+    txt('Dear ' + name + ',', 14, y, {size:10, bold:true}); y+=8;
+    const apptPara = `This is to confirm your appointment as ${desg} in the ${dept} Department of ${companyName} with effect from ${doj}, on the following terms and conditions:`;
+    const apptLines = doc.splitTextToSize(apptPara, W-28);
+    txt(apptLines.join('\n'), 14, y, {size:9.5}); y += apptLines.length*5+6;
+
+    // Details table
+    const dtRows = [
+      ['Employee ID', eid], ['Designation', desg], ['Department', dept],
+      ['Date of Joining', doj], ['Annual CTC', '\u20B9 ' + inr(ctc)], ['Probation Period', '6 months'],
+      ['Reporting To', 'Head of Department']
+    ];
+    dtRows.forEach(([l,v],i) => {
+      rect(14, y, 70, 8, i%2===0?LGRY:WHT, GRY);
+      rect(84, y, W-98, 8, i%2===0?LGRY:WHT, GRY);
+      txt(l, 16, y+5.5, {size:9, bold:true}); txt(v, 86, y+5.5, {size:9}); y+=8;
     });
-    y += 14;
-    doc.setFont('helvetica','normal'); doc.setTextColor(180,200,220); doc.setFontSize(9);
-    doc.text("You will be governed by the company's HR policies and code of conduct in force from time to time.", 20, y);
-    y += 20; doc.setFillColor(...accent); doc.rect(15,y,180,1,'F');
-    y += 10; doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255); doc.text('Authorized Signatory', 20, y);
-    doc.setFont('helvetica','normal'); doc.setTextColor(180,200,220); doc.text('SmartHR Technologies Pvt. Ltd.', 20, y+7);
-    doc.save(`Appointment_Letter_${name.replace(' ','_')}.pdf`);
+    y+=8;
+
+    const clauses = [
+      'You will be on probation for a period of 6 months from your date of joining. Your services can be regularized after successful completion of probation.',
+      'During the probation period, either party may terminate the contract with one month notice.',
+      'You will be governed by the HR policies and code of conduct of ' + companyName + ' in force from time to time.',
+      'Your compensation details are strictly confidential and must not be disclosed to anyone.',
+      'This letter is issued subject to the submission of all required documents before or on date of joining.'
+    ];
+    clauses.forEach((cl,i) => {
+      const w = doc.splitTextToSize(cl, W-36);
+      txt((i+1)+'.', 16, y, {size:9}); 
+      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(...BLK);
+      doc.text(w, 23, y);
+      y += w.length*4.8+3;
+    });
+
+    y+=6;
+    txt('Please sign and return a copy of this letter as your acceptance.', 14, y, {size:9}); y+=8;
+    txt('We welcome you to the ' + companyName + ' family!', 14, y, {size:9.5, bold:true}); y+=10;
+    txt('For ' + companyName, 14, y, {size:9, bold:true}); y+=18;
+    doc.line(14, y, 70, y);
+    y+=4;
+    txt('Authorised Signatory', 14, y, {size:9, bold:true});
+    txt('HR Department', 14, y+5, {size:9});
+
+    y+=20; rect(14, y, W-28, 0.4, [200,200,200], null); y+=5;
+    txt('I accept the terms of appointment.', 14, y, {size:8.5}); y+=8;
+    txt('Name & Signature:', 14, y, {size:9}); doc.line(46, y, 110, y);
+    txt('Date:', 120, y, {size:9}); doc.line(130, y, 160, y);
+
+    rect(0, H-18, W, 18, [245,245,245], null);
+    rect(0, H-18, W, 0.4, [200,200,200], null);
+    txt('Campus: ' + companyAddr, W/2, H-10, {size:7, color:[100,100,100], align:'center'});
+
+    doc.save('Appointment_Letter_' + name.replace(/ /g,'_') + '.pdf');
   }
 
   showToast('PDF generated and downloaded!', 'success');
 }
+
+// ── Helper: number to words (Indian system) ──────────────────────
+function numberToWords(n) {
+  if(n===0) return 'zero';
+  const ones=['','one','two','three','four','five','six','seven','eight','nine','ten',
+    'eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+  const tens=['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+  function hun(n){ 
+    if(n<20) return ones[n];
+    if(n<100) return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');
+    return ones[Math.floor(n/100)]+' hundred'+(n%100?' '+hun(n%100):'');
+  }
+  const cr=Math.floor(n/10000000); n%=10000000;
+  const lac=Math.floor(n/100000); n%=100000;
+  const th=Math.floor(n/1000); n%=1000;
+  let s='';
+  if(cr) s+=hun(cr)+' crore ';
+  if(lac) s+=hun(lac)+' lakh ';
+  if(th) s+=hun(th)+' thousand ';
+  if(n) s+=hun(n);
+  return s.trim();
+}
+
 
 // ===========================
 // CALENDAR
@@ -2418,6 +2879,7 @@ function showQR() {
 }
 </script>
 
+<script>
 // ===========================
 // TOAST
 // ===========================

@@ -188,11 +188,11 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 
 /* ===== SIDEBAR ===== */
 .sidebar {
-  width: var(--sidebar-w); min-height: 100vh; background: var(--navy2);
+  width: var(--sidebar-w); height: 100vh; background: var(--navy2);
   border-right: 1px solid var(--border); display: flex; flex-direction: column;
-  position: fixed; top: 0; left: 0; z-index: 100;
+  position: fixed; top: 0; left: 0; z-index: 100; overflow: hidden;
 }
-.logo { padding: 20px 18px 16px; border-bottom: 1px solid var(--border); }
+.logo { padding: 20px 18px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .logo-mark { display: flex; align-items: center; gap: 10px; }
 .logo-icon {
   width: 36px; height: 36px; border-radius: 9px;
@@ -202,7 +202,10 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 }
 .logo-name { font-size: 17px; font-weight: 700; letter-spacing: -0.4px; }
 .logo-sub { font-size: 10px; color: var(--text-muted); letter-spacing: 0.9px; text-transform: uppercase; margin-top: 1px; }
-.nav { padding: 14px 10px; flex: 1; overflow-y: auto; }
+.nav { padding: 14px 10px; flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.nav::-webkit-scrollbar { width: 3px; }
+.nav::-webkit-scrollbar-track { background: transparent; }
+.nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 10px; }
 .nav-section { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); padding: 8px 10px 4px; }
 .nav-item {
   display: flex; align-items: center; gap: 10px; padding: 9px 10px;
@@ -217,7 +220,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 }
 .nav-icon { font-size: 16px; width: 18px; text-align: center; }
 .nav-badge { margin-left: auto; background: var(--coral); color: #fff; font-size: 10px; padding: 1px 7px; border-radius: 10px; font-weight: 700; }
-.sidebar-footer { padding: 12px 10px; border-top: 1px solid var(--border); }
+.sidebar-footer { padding: 12px 10px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .user-pill { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; cursor: pointer; }
 .user-pill:hover { background: var(--card-hover); }
 .avatar-sm {

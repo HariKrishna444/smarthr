@@ -475,6 +475,71 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+
+/* ===== HR ANALYTICS ===== */
+.analytics-donut { display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; }
+.donut-legend { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.donut-leg-item { display: flex; align-items: center; gap: 8px; color: var(--text-dim); }
+.donut-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.metric-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.metric-row:last-child { border-bottom: none; }
+.metric-label { font-size: 13px; color: var(--text-dim); }
+.metric-val { font-size: 14px; font-weight: 600; }
+.metric-bar { height: 6px; border-radius: 10px; background: rgba(255,255,255,0.08); margin-top: 6px; overflow: hidden; }
+.metric-bar-fill { height: 100%; border-radius: 10px; transition: width 0.6s ease; }
+
+/* ===== EXPENSE MANAGEMENT ===== */
+.expense-badge { font-size: 11px; padding: 2px 9px; border-radius: 20px; font-weight: 500; }
+.expense-travel { background: rgba(55,138,221,0.18); color: var(--blue); }
+.expense-food { background: rgba(239,159,39,0.18); color: var(--gold); }
+.expense-other { background: rgba(127,119,221,0.18); color: var(--purple); }
+
+/* ===== AUDIT LOG ===== */
+.audit-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.audit-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.audit-info { flex: 1; min-width: 0; }
+.audit-action { font-size: 13px; font-weight: 500; }
+.audit-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.audit-time { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+/* ===== DOCUMENT VAULT ===== */
+.vault-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.vault-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s; }
+.vault-card:hover { background: var(--card-hover); transform: translateY(-2px); }
+.vault-icon { font-size: 28px; margin-bottom: 8px; }
+.vault-name { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.vault-size { font-size: 11px; color: var(--text-muted); }
+
+/* ===== OKR SYSTEM ===== */
+.okr-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 12px; }
+.okr-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.okr-kr { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 13px; }
+.okr-kr-label { flex: 1; color: var(--text-dim); }
+.okr-progress-wrap { width: 120px; height: 6px; background: rgba(255,255,255,0.08); border-radius: 10px; overflow: hidden; }
+.okr-progress-fill { height: 100%; border-radius: 10px; background: var(--accent); }
+.okr-pct { font-size: 12px; font-weight: 600; width: 36px; text-align: right; }
+
+/* ===== SALARY ANALYTICS ===== */
+.salary-bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.salary-dept { font-size: 12px; color: var(--text-dim); width: 90px; flex-shrink: 0; }
+.salary-bar-wrap { flex: 1; height: 20px; background: rgba(255,255,255,0.06); border-radius: 6px; overflow: hidden; position: relative; }
+.salary-bar-fill { height: 100%; border-radius: 6px; display: flex; align-items: center; padding-left: 8px; font-size: 11px; font-weight: 600; color: #fff; transition: width 0.6s ease; }
+.salary-val { font-size: 12px; font-weight: 600; width: 55px; text-align: right; flex-shrink: 0; }
+
+/* ===== QR ATTENDANCE ===== */
+.qr-box { background: #fff; border-radius: 12px; padding: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto; width: 160px; height: 160px; }
+.qr-box svg { width: 120px; height: 120px; }
+
+/* ===== CAREER PORTAL ===== */
+.job-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 12px; transition: all 0.2s; }
+.job-card:hover { background: var(--card-hover); border-color: var(--accent); }
+.job-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.job-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.job-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.job-tag { font-size: 11px; padding: 2px 9px; border-radius: 20px; background: rgba(55,138,221,0.15); color: var(--blue); }
+
+/* ===== AI PERFORMANCE REVIEW ===== */
+.ai-review-out { background: rgba(29,158,117,0.08); border: 1px solid rgba(29,158,117,0.2); border-radius: 10px; padding: 16px; font-size: 13px; line-height: 1.65; color: var(--text-dim); margin-top: 16px; display: none; }
 </style>
 </head>
 <body>
@@ -581,6 +646,15 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
     <div class="nav-section">Self-Service</div>
     <div class="nav-item" data-panel="selfservice"><span class="nav-icon">👤</span> My Portal</div>
     <div class="nav-item" data-panel="notifications"><span class="nav-icon">🔔</span> Notifications</div>
+    <div class="nav-section">Analytics & Finance</div>
+    <div class="nav-item" data-panel="hranalytics"><span class="nav-icon">📈</span> HR Analytics</div>
+    <div class="nav-item" data-panel="expenses"><span class="nav-icon">🧾</span> Expenses</div>
+    <div class="nav-section">Compliance</div>
+    <div class="nav-item" data-panel="docvault"><span class="nav-icon">🗄️</span> Document Vault</div>
+    <div class="nav-item" data-panel="auditlog"><span class="nav-icon">🔍</span> Audit Log</div>
+    <div class="nav-section">Growth</div>
+    <div class="nav-item" data-panel="okr"><span class="nav-icon">🎯</span> OKR / Goals</div>
+    <div class="nav-item" data-panel="careerportal"><span class="nav-icon">🌐</span> Career Portal</div>
     <div class="nav-section">Support</div>
     <div class="nav-item" data-panel="tickets"><span class="nav-icon">🎫</span> Tickets <span class="nav-badge">3</span></div>
     <div class="nav-item" data-panel="noticeboard"><span class="nav-icon">📌</span> Notice Board</div>
@@ -663,12 +737,14 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
         </div>
         <div class="card">
           <div class="card-head"><span class="card-title">At a Glance</span></div>
-          <div class="pay-row"><span class="pay-label">Attrition Rate</span><span class="pay-val neg">5.6%</span></div>
+          <div class="pay-row"><span class="pay-label">Attrition Rate</span><span class="pay-val neg" style="cursor:pointer" onclick="go('hranalytics')">5.6% ↗</span></div>
           <div class="pay-row"><span class="pay-label">Avg Tenure</span><span class="pay-val">3.2 yrs</span></div>
           <div class="pay-row"><span class="pay-label">Monthly Payroll</span><span class="pay-val">₹54.3L</span></div>
           <div class="pay-row"><span class="pay-label">Interviews Today</span><span class="pay-val pos">16</span></div>
           <div class="pay-row"><span class="pay-label">AI Risk Alerts</span><span class="pay-val neg">8 employees</span></div>
           <div class="pay-row"><span class="pay-label">Avg KPI Score</span><span class="pay-val pos">82 / 100</span></div>
+          <div class="pay-row"><span class="pay-label">Expense Claims</span><span class="pay-val" style="cursor:pointer;color:var(--gold)" onclick="go('expenses')">23 Pending ↗</span></div>
+          <div class="pay-row"><span class="pay-label">OKR Completion</span><span class="pay-val pos" style="cursor:pointer" onclick="go('okr')">67% ↗</span></div>
         </div>
       </div>
     </div>
@@ -852,7 +928,8 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
             ⚡ Powered by Claude API · Add your API key in config to enable real AI
           </div>
         </div>
-        <div class="card">
+        <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card" style="margin-bottom:0">
           <div class="card-head"><span class="card-title">AI Resume Analyzer</span><span class="badge bb">NLP Powered</span></div>
           <div class="drop-zone" id="resume-drop" onclick="document.getElementById('resume-file').click()"
             ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -871,6 +948,22 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
             <div id="resume-output"></div>
           </div>
         </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="card-head"><span class="card-title">🤖 AI Performance Review Writer</span><span class="badge bp">Manager Tool</span></div>
+          <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Enter scores and achievements — AI writes professional appraisal comments instantly.</p>
+          <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" id="pr-name" placeholder="Aarav Mehta" /></div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Performance Score (0–100)</label><input class="form-input" id="pr-score" type="number" placeholder="85" /></div>
+            <div class="form-group"><label class="form-label">Rating</label>
+              <select class="form-select" id="pr-rating"><option>Exceeds Expectations</option><option>Meets Expectations</option><option>Needs Improvement</option><option>Outstanding</option></select>
+            </div>
+          </div>
+          <div class="form-group"><label class="form-label">Key Achievements</label><input class="form-input" id="pr-achievements" placeholder="Delivered 3 major projects, improved API performance by 40%..." /></div>
+          <div class="form-group"><label class="form-label">Areas of Improvement</label><input class="form-input" id="pr-improvement" placeholder="Documentation, cross-team communication..." /></div>
+          <button class="btn-primary" style="width:auto;padding:10px 20px" onclick="generatePerfReview()">✨ Generate AI Review</button>
+          <div class="ai-review-out" id="ai-review-out"></div>
+        </div>
+        </div><!-- /right col -->
       </div>
     </div>
 
@@ -1002,6 +1095,21 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
           <div class="portal-label">HR Assistant</div>
           <div class="portal-desc">Ask any HR question</div>
         </div>
+        <div class="portal-card" onclick="go('docvault')">
+          <div class="portal-icon">🗄️</div>
+          <div class="portal-label">Document Vault</div>
+          <div class="portal-desc">Aadhaar, PAN, certificates</div>
+        </div>
+        <div class="portal-card" onclick="go('expenses')">
+          <div class="portal-icon">🧾</div>
+          <div class="portal-label">My Expenses</div>
+          <div class="portal-desc">Submit & track claims</div>
+        </div>
+        <div class="portal-card" onclick="showQR()">
+          <div class="portal-icon">📱</div>
+          <div class="portal-label">QR Check-In</div>
+          <div class="portal-desc">Scan to mark attendance</div>
+        </div>
       </div>
       <div class="two-col two-eq">
         <div class="card">
@@ -1096,6 +1204,202 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
         <div class="ann-item"><div class="ann-ico" style="background:rgba(239,159,39,0.15)">⚠️</div><div><div class="ann-title">Annual Appraisal Cycle Begins – November 15</div><div class="ann-desc">All HODs to submit Q3 performance reviews by 12th November. Self-assessment forms are live.</div></div></div>
         <div class="ann-item"><div class="ann-ico" style="background:rgba(226,75,74,0.15)">📅</div><div><div class="ann-title">Office Holiday List 2025 Published</div><div class="ann-desc">13 gazetted holidays + 2 optional restricted holidays. Check under Leave Management.</div></div></div>
         <div class="ann-item"><div class="ann-ico" style="background:rgba(127,119,221,0.15)">🚀</div><div><div class="ann-title">SmartHR Portal v2.0 Now Live!</div><div class="ann-desc">New features: Firebase Auth, Employee CRUD, AI Chat, PDF generation, WhatsApp & SMS notifications.</div></div></div>
+      </div>
+    </div>
+
+    <!-- ======================== HR ANALYTICS ======================== -->
+    <div class="panel" id="panel-hranalytics">
+      <div class="stat-grid">
+        <div class="stat-card"><div class="s-label">Attrition Rate <span class="s-icon">📉</span></div><div class="s-num" style="color:var(--coral)">5.6%</div><div class="s-change dn">▼ Industry avg 9.2%</div></div>
+        <div class="stat-card"><div class="s-label">Gender Diversity <span class="s-icon">⚖️</span></div><div class="s-num" style="color:var(--blue)">38%</div><div class="s-change nm">Women in workforce</div></div>
+        <div class="stat-card"><div class="s-label">Avg Tenure <span class="s-icon">🏅</span></div><div class="s-num" style="color:var(--accent2)">3.2y</div><div class="s-change up">▲ Improving</div></div>
+        <div class="stat-card"><div class="s-label">New Hires MTD <span class="s-icon">🧑‍💼</span></div><div class="s-num" style="color:var(--gold)">17</div><div class="s-change up">▲ 4 above target</div></div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Department Strength</span><span class="badge bg">Live</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Engineering</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:73%;background:var(--blue)">128</div></div><span class="salary-val">128</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Sales</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:55%;background:var(--accent)">96</div></div><span class="salary-val">96</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Operations</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:47%;background:var(--coral)">82</div></div><span class="salary-val">82</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Marketing</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:37%;background:var(--gold)">64</div></div><span class="salary-val">64</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">HR & Admin</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:28%;background:var(--purple)">48</div></div><span class="salary-val">48</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Finance</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:21%;background:var(--accent2)">36</div></div><span class="salary-val">36</span></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Gender Diversity</span></div>
+          <div class="analytics-donut">
+            <svg viewBox="0 0 120 120" width="130" height="130">
+              <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="20"/>
+              <circle cx="60" cy="60" r="48" fill="none" stroke="var(--blue)" stroke-width="20" stroke-dasharray="181 120" stroke-dashoffset="30"/>
+              <circle cx="60" cy="60" r="48" fill="none" stroke="var(--accent)" stroke-width="20" stroke-dasharray="120 181" stroke-dashoffset="-150"/>
+              <text x="60" y="55" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">62%</text>
+              <text x="60" y="70" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="9">Male</text>
+            </svg>
+            <div class="donut-legend">
+              <div class="donut-leg-item"><div class="donut-dot" style="background:var(--blue)"></div>Male — 62% (335)</div>
+              <div class="donut-leg-item"><div class="donut-dot" style="background:var(--accent)"></div>Female — 38% (205)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Salary Analytics by Department</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Engineering</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:100%;background:linear-gradient(90deg,var(--blue),var(--purple))">₹22.8L</div></div><span class="salary-val">₹22.8L</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Sales</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:54%;background:var(--accent)">₹11.9L</div></div><span class="salary-val">₹11.9L</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Operations</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:41%;background:var(--coral)">₹9.1L</div></div><span class="salary-val">₹9.1L</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Marketing</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:30%;background:var(--gold)">₹6.8L</div></div><span class="salary-val">₹6.8L</span></div>
+          <div class="salary-bar-row"><span class="salary-dept">Finance</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:16%;background:var(--accent2)">₹3.7L</div></div><span class="salary-val">₹3.7L</span></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Key HR Metrics</span></div>
+          <div class="metric-row"><span class="metric-label">Avg Salary</span><span class="metric-val" style="color:var(--accent2)">₹1,00,556</span></div>
+          <div class="metric-row"><span class="metric-label">Cost Per Hire</span><span class="metric-val">₹48,200</span></div>
+          <div class="metric-row"><span class="metric-label">Time to Fill (avg)</span><span class="metric-val" style="color:var(--gold)">28 days</span></div>
+          <div class="metric-row"><span class="metric-label">Training Hours/Emp</span><span class="metric-val">18 hrs</span></div>
+          <div class="metric-row"><span class="metric-label">Offer Acceptance Rate</span><span class="metric-val" style="color:var(--accent2)">84%</span></div>
+          <div class="metric-row"><span class="metric-label">Employee NPS</span><span class="metric-val" style="color:var(--blue)">+42</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== EXPENSES ======================== -->
+    <div class="panel" id="panel-expenses">
+      <div class="stat-grid stat-3">
+        <div class="stat-card"><div class="s-label">Pending Claims</div><div class="s-num" style="color:var(--gold)">23</div><div class="s-change nm">₹2.1L total</div></div>
+        <div class="stat-card"><div class="s-label">Approved MTD</div><div class="s-num" style="color:var(--accent2)">41</div><div class="s-change up">₹3.8L disbursed</div></div>
+        <div class="stat-card"><div class="s-label">Rejected</div><div class="s-num" style="color:var(--coral)">5</div><div class="s-change dn">Policy violations</div></div>
+      </div>
+      <div style="margin-bottom:14px;display:flex;justify-content:flex-end">
+        <button class="btn-primary" style="width:auto;padding:9px 16px" onclick="openExpenseModal()">+ Submit Expense</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <table class="tbl">
+          <thead><tr><th>Employee</th><th>Category</th><th>Amount</th><th>Date</th><th>Description</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody id="expense-tbody">
+            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(55,138,221,0.2);color:var(--blue)">AM</div>Aarav Mehta</div></td><td><span class="expense-badge expense-travel">Travel</span></td><td>₹4,200</td><td>10 Nov</td><td>Mumbai client visit</td><td><span class="pill pill-o">Pending</span></td><td><div style="display:flex;gap:6px"><button onclick="approveExpense(this)" style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✓ Approve</button><button onclick="rejectExpense(this)" style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✕</button></div></td></tr>
+            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(29,158,117,0.2);color:var(--accent2)">PS</div>Priya Sharma</div></td><td><span class="expense-badge expense-food">Food</span></td><td>₹850</td><td>11 Nov</td><td>Team lunch</td><td><span class="pill pill-g">Approved</span></td><td>—</td></tr>
+            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(127,119,221,0.2);color:var(--purple)">VR</div>Vikram Rao</div></td><td><span class="expense-badge expense-other">Internet</span></td><td>₹999</td><td>09 Nov</td><td>WFH broadband</td><td><span class="pill pill-o">Pending</span></td><td><div style="display:flex;gap:6px"><button onclick="approveExpense(this)" style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✓ Approve</button><button onclick="rejectExpense(this)" style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✕</button></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ======================== DOCUMENT VAULT ======================== -->
+    <div class="panel" id="panel-docvault">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">🗄️ Employee Document Vault</span><span class="badge bg">Firebase Storage</span></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Securely store and access employee documents. All files are encrypted at rest.</p>
+        <div class="vault-grid" id="vault-grid">
+          <div class="vault-card"><div class="vault-icon">🪪</div><div class="vault-name">Aadhaar Card</div><div class="vault-size">Verified ✓</div></div>
+          <div class="vault-card"><div class="vault-icon">🗒️</div><div class="vault-name">PAN Card</div><div class="vault-size">Verified ✓</div></div>
+          <div class="vault-card"><div class="vault-icon">🎓</div><div class="vault-name">Degree Certificate</div><div class="vault-size">2.1 MB</div></div>
+          <div class="vault-card"><div class="vault-icon">📝</div><div class="vault-name">Offer Letter</div><div class="vault-size">Mar 2022</div></div>
+          <div class="vault-card"><div class="vault-icon">📋</div><div class="vault-name">Appointment Letter</div><div class="vault-size">Mar 2022</div></div>
+          <div class="vault-card"><div class="vault-icon">💼</div><div class="vault-name">Experience Letter</div><div class="vault-size">Previous Co.</div></div>
+          <div class="vault-card" onclick="showToast('Upload feature active with Firebase Storage','info')"><div class="vault-icon">⬆️</div><div class="vault-name">Upload Document</div><div class="vault-size">Click to upload</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">Expiry Alerts</span><span class="badge br">Action Required</span></div>
+        <table class="tbl">
+          <thead><tr><th>Employee</th><th>Document</th><th>Expiry</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Rajesh Kumar</td><td>Driving License</td><td>31 Dec 2024</td><td><span class="pill pill-r">Expiring Soon</span></td></tr>
+            <tr><td>Neha Patel</td><td>Medical Certificate</td><td>15 Jan 2025</td><td><span class="pill pill-o">60 days left</span></td></tr>
+            <tr><td>Sunita Joshi</td><td>Background Check</td><td>Mar 2025</td><td><span class="pill pill-g">Valid</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ======================== AUDIT LOG ======================== -->
+    <div class="panel" id="panel-auditlog">
+      <div class="stat-grid stat-3">
+        <div class="stat-card"><div class="s-label">Events Today</div><div class="s-num">142</div></div>
+        <div class="stat-card"><div class="s-label">Critical Actions</div><div class="s-num" style="color:var(--coral)">4</div></div>
+        <div class="stat-card"><div class="s-label">Active Users</div><div class="s-num" style="color:var(--accent2)">28</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">🔍 System Audit Log</span><span class="badge bb">Real-time</span></div>
+        <div id="audit-log-list">
+          <div class="audit-row"><div class="audit-icon" style="background:rgba(226,75,74,0.15)">🗑️</div><div class="audit-info"><div class="audit-action">Employee deleted – EMP-0204 (Suresh Nair)</div><div class="audit-meta">By: admin@smarthr.com · IP: 103.21.x.x</div></div><div class="audit-time">09:42 am</div></div>
+          <div class="audit-row"><div class="audit-icon" style="background:rgba(29,158,117,0.15)">✅</div><div class="audit-info"><div class="audit-action">Leave approved – Priya Sharma (Sick Leave, 2 days)</div><div class="audit-meta">By: manager@smarthr.com · IP: 103.21.x.x</div></div><div class="audit-time">09:14 am</div></div>
+          <div class="audit-row"><div class="audit-icon" style="background:rgba(55,138,221,0.15)">✏️</div><div class="audit-info"><div class="audit-action">Salary updated – EMP-0042 Aarav Mehta (₹90K → ₹1,11K)</div><div class="audit-meta">By: hr@smarthr.com · IP: 103.22.x.x</div></div><div class="audit-time">08:50 am</div></div>
+          <div class="audit-row"><div class="audit-icon" style="background:rgba(239,159,39,0.15)">🔑</div><div class="audit-info"><div class="audit-action">Login – vikram@smarthr.com</div><div class="audit-meta">By: vikram@smarthr.com · IP: 49.36.x.x · Chrome/Windows</div></div><div class="audit-time">08:32 am</div></div>
+          <div class="audit-row"><div class="audit-icon" style="background:rgba(29,158,117,0.15)">➕</div><div class="audit-info"><div class="audit-action">New employee added – EMP-0541 Kavya Reddy</div><div class="audit-meta">By: hr@smarthr.com · IP: 103.22.x.x</div></div><div class="audit-time">Yesterday</div></div>
+          <div class="audit-row"><div class="audit-icon" style="background:rgba(127,119,221,0.15)">⬇️</div><div class="audit-info"><div class="audit-action">Payslip downloaded – EMP-0042 (October 2024)</div><div class="audit-meta">By: aarav@smarthr.com · IP: 49.37.x.x</div></div><div class="audit-time">Yesterday</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== OKR / GOALS ======================== -->
+    <div class="panel" id="panel-okr">
+      <div class="stat-grid stat-3">
+        <div class="stat-card"><div class="s-label">Active Objectives</div><div class="s-num" style="color:var(--blue)">12</div></div>
+        <div class="stat-card"><div class="s-label">Avg Completion</div><div class="s-num" style="color:var(--accent2)">67%</div></div>
+        <div class="stat-card"><div class="s-label">On Track</div><div class="s-num" style="color:var(--gold)">8/12</div></div>
+      </div>
+      <div style="margin-bottom:14px;display:flex;justify-content:flex-end">
+        <button class="btn-primary" style="width:auto;padding:9px 16px" onclick="showToast('OKR creation coming soon!','info')">+ Add Objective</button>
+      </div>
+      <div class="okr-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="okr-title">🚀 Scale Engineering Team to 150 Members by Q1 2025</div>
+          <span class="badge bb">Engineering</span>
+        </div>
+        <div class="okr-kr"><span class="okr-kr-label">KR1: Hire 22 new engineers</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:77%"></div></div><span class="okr-pct" style="color:var(--accent2)">77%</span></div>
+        <div class="okr-kr"><span class="okr-kr-label">KR2: Reduce time-to-hire to 20 days</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:60%;background:var(--gold)"></div></div><span class="okr-pct" style="color:var(--gold)">60%</span></div>
+        <div class="okr-kr"><span class="okr-kr-label">KR3: 90% offer acceptance rate</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:93%;background:var(--accent2)"></div></div><span class="okr-pct" style="color:var(--accent2)">93%</span></div>
+      </div>
+      <div class="okr-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="okr-title">📊 Reduce Attrition Rate Below 4% by Year End</div>
+          <span class="badge bo">HR</span>
+        </div>
+        <div class="okr-kr"><span class="okr-kr-label">KR1: Launch employee wellness program</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:100%"></div></div><span class="okr-pct" style="color:var(--accent2)">100%</span></div>
+        <div class="okr-kr"><span class="okr-kr-label">KR2: Monthly 1:1 check-ins for at-risk employees</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:50%;background:var(--gold)"></div></div><span class="okr-pct" style="color:var(--gold)">50%</span></div>
+        <div class="okr-kr"><span class="okr-kr-label">KR3: Attrition rate ≤ 4%</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:30%;background:var(--coral)"></div></div><span class="okr-pct" style="color:var(--coral)">30%</span></div>
+      </div>
+      <div class="okr-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="okr-title">💰 Optimise Payroll Cost to Revenue Ratio</div>
+          <span class="badge bg">Finance</span>
+        </div>
+        <div class="okr-kr"><span class="okr-kr-label">KR1: Automate payroll processing 100%</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:85%"></div></div><span class="okr-pct" style="color:var(--accent2)">85%</span></div>
+        <div class="okr-kr"><span class="okr-kr-label">KR2: Reduce payroll errors to zero</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:70%;background:var(--gold)"></div></div><span class="okr-pct" style="color:var(--gold)">70%</span></div>
+      </div>
+    </div>
+
+    <!-- ======================== CAREER PORTAL ======================== -->
+    <div class="panel" id="panel-careerportal">
+      <div class="stat-grid stat-3">
+        <div class="stat-card"><div class="s-label">Active Openings</div><div class="s-num" style="color:var(--blue)">16</div></div>
+        <div class="stat-card"><div class="s-label">Applications MTD</div><div class="s-num">248</div></div>
+        <div class="stat-card"><div class="s-label">Referrals</div><div class="s-num" style="color:var(--accent2)">34</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><span class="card-title">🌐 Public Career Portal</span><span class="badge bg">Live</span></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Jobs posted here appear on your public careers page. Applications go directly into Firestore.</p>
+        <div class="job-card">
+          <div class="job-title">Senior React Developer</div>
+          <div class="job-meta"><span>🏢 Engineering</span><span>📍 Hyderabad / Remote</span><span>💰 ₹18–25 LPA</span><span>📅 Posted 3 days ago</span></div>
+          <div class="job-tags"><span class="job-tag">React</span><span class="job-tag">TypeScript</span><span class="job-tag">Node.js</span><span class="job-tag">5+ yrs</span></div>
+          <div style="margin-top:12px;display:flex;gap:10px">
+            <button class="btn-secondary" style="font-size:12px;padding:6px 12px">✏️ Edit</button>
+            <button class="btn-primary" style="width:auto;padding:6px 16px;font-size:12px" onclick="showToast('62 applications received!','success')">👁 View 62 Applications</button>
+          </div>
+        </div>
+        <div class="job-card">
+          <div class="job-title">Data Scientist</div>
+          <div class="job-meta"><span>🏢 Engineering</span><span>📍 Bangalore</span><span>💰 ₹20–30 LPA</span><span>📅 Posted 5 days ago</span></div>
+          <div class="job-tags"><span class="job-tag">Python</span><span class="job-tag">ML/AI</span><span class="job-tag">TensorFlow</span><span class="job-tag">3+ yrs</span></div>
+          <div style="margin-top:12px;display:flex;gap:10px">
+            <button class="btn-secondary" style="font-size:12px;padding:6px 12px">✏️ Edit</button>
+            <button class="btn-primary" style="width:auto;padding:6px 16px;font-size:12px" onclick="showToast('48 applications received!','success')">👁 View 48 Applications</button>
+          </div>
+        </div>
+        <button class="btn-primary" style="width:auto;padding:10px 20px;margin-top:8px" onclick="showToast('Job posting form coming soon!','info')">+ Post New Job</button>
       </div>
     </div>
 
@@ -1206,6 +1510,33 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
   </div>
 </div>
 
+<!-- ===== EXPENSE MODAL ===== -->
+<div class="modal-overlay" id="expense-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Submit Expense Claim</span>
+      <button class="modal-close" onclick="closeModal('expense-modal')">✕</button>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" id="exp-name" placeholder="Your name" /></div>
+      <div class="form-group"><label class="form-label">Amount (₹)</label><input class="form-input" id="exp-amount" type="number" placeholder="0" /></div>
+      <div class="form-group"><label class="form-label">Category</label>
+        <select class="form-select" id="exp-cat"><option>Travel</option><option>Food</option><option>Internet</option><option>Hotel</option><option>Other</option></select>
+      </div>
+      <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="exp-date" type="date" /></div>
+    </div>
+    <div class="form-group"><label class="form-label">Description *</label><input class="form-input" id="exp-desc" placeholder="Describe the expense..." /></div>
+    <div class="form-group">
+      <label class="form-label">Upload Bill (Optional)</label>
+      <div style="border:1px dashed var(--border);border-radius:9px;padding:14px;text-align:center;font-size:12px;color:var(--text-muted);cursor:pointer" onclick="showToast('File upload active with Firebase Storage','info')">📎 Click to attach bill / receipt</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('expense-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:10px 24px" onclick="submitExpense()">Submit Claim</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- /app-shell -->
 
 <script>
@@ -1220,13 +1551,19 @@ const titles = {
   payroll:['Payroll','Salary structures, payslips, tax calculations and history.'],
   recruitment:['Recruitment','AI-powered hiring pipeline and applicant tracking system.'],
   performance:['Performance','KPI tracking, appraisals and AI attrition risk prediction.'],
-  ai:['AI Assistant','Real HR chatbot powered by Claude AI + resume analyzer.'],
+  ai:['AI Assistant','Real HR chatbot powered by Claude AI + resume analyzer + review writer.'],
   documents:['Document Generator','Generate payslips, offer letters and appointment letters as PDF.'],
   calendar:['Calendar','HR events, interviews, holidays and team schedule.'],
   selfservice:['My Portal','Employee self-service – leaves, payslips, documents and more.'],
   notifications:['Notifications','Configure email, WhatsApp and SMS notification channels.'],
   tickets:['Tickets & Complaints','Employee issue tracking and resolution dashboard.'],
-  noticeboard:['Notice Board','Company announcements, holidays and policy updates.']
+  noticeboard:['Notice Board','Company announcements, holidays and policy updates.'],
+  hranalytics:['HR Analytics','Attrition, diversity, salary trends and workforce insights.'],
+  expenses:['Expense Management','Employee expense claims, approvals and reimbursement tracking.'],
+  docvault:['Document Vault','Secure storage for employee documents – Aadhaar, PAN, certificates.'],
+  auditlog:['Audit Log','Track every user action: who, what, when, and from where.'],
+  okr:['OKR / Goals','Track Objectives and Key Results across teams and individuals.'],
+  careerportal:['Career Portal','Public job listings, applications and referral tracking.'],
 };
 
 function go(name) {
@@ -2006,6 +2343,80 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', e => { if(e.target===m) m.classList.remove('open'); });
 });
+function openExpenseModal() { document.getElementById('expense-modal').classList.add('open'); }
+
+function approveExpense(btn) {
+  const row = btn.closest('tr');
+  row.querySelector('.pill').className = 'pill pill-g';
+  row.querySelector('.pill').textContent = 'Approved';
+  row.lastElementChild.textContent = '✓ Done';
+  showToast('Expense approved!', 'success');
+}
+function rejectExpense(btn) {
+  const row = btn.closest('tr');
+  row.querySelector('.pill').className = 'pill pill-r';
+  row.querySelector('.pill').textContent = 'Rejected';
+  row.lastElementChild.textContent = '—';
+  showToast('Expense rejected', 'info');
+}
+
+function submitExpense() {
+  const name = document.getElementById('exp-name').value.trim();
+  const amount = document.getElementById('exp-amount').value;
+  const cat = document.getElementById('exp-cat').value;
+  const desc = document.getElementById('exp-desc').value.trim();
+  if (!name || !amount || !desc) { showToast('Please fill required fields', 'error'); return; }
+  const tbody = document.getElementById('expense-tbody');
+  const initials = name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  const catClass = cat==='Travel'?'expense-travel':cat==='Food'?'expense-food':'expense-other';
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(93,202,165,0.2);color:var(--accent2)">${initials}</div>${name}</div></td><td><span class="expense-badge ${catClass}">${cat}</span></td><td>₹${parseInt(amount).toLocaleString('en-IN')}</td><td>${new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</td><td>${desc}</td><td><span class="pill pill-o">Pending</span></td><td><div style="display:flex;gap:6px"><button onclick="approveExpense(this)" style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✓ Approve</button><button onclick="rejectExpense(this)" style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✕</button></div></td>`;
+  tbody.prepend(tr);
+  closeModal('expense-modal');
+  showToast('Expense claim submitted!', 'success');
+}
+
+// ===========================
+// AI PERFORMANCE REVIEW WRITER
+// ===========================
+async function generatePerfReview() {
+  const name = document.getElementById('pr-name').value.trim() || 'the employee';
+  const score = document.getElementById('pr-score').value || '80';
+  const rating = document.getElementById('pr-rating').value;
+  const achievements = document.getElementById('pr-achievements').value.trim() || 'Completed assigned tasks';
+  const improvement = document.getElementById('pr-improvement').value.trim() || 'Continue developing skills';
+  const out = document.getElementById('ai-review-out');
+  out.style.display = 'block';
+  out.innerHTML = '<span class="spinner"></span> Generating review with AI...';
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: `Write a professional HR performance appraisal comment for ${name}. Performance score: ${score}/100. Rating: ${rating}. Key achievements: ${achievements}. Areas for improvement: ${improvement}. Write 2-3 concise professional paragraphs suitable for an official appraisal form. Be specific, constructive and encouraging.`
+        }]
+      })
+    });
+    const data = await response.json();
+    const text = data.content?.map(c=>c.text||'').join('') || 'AI response unavailable. Please add your Claude API key.';
+    out.innerHTML = text.replace(/\n\n/g,'<br><br>');
+  } catch(e) {
+    // Demo fallback
+    out.innerHTML = `<strong>${name}</strong> has demonstrated a strong performance this review cycle with a score of ${score}/100, rated as <em>${rating}</em>.<br><br>Key highlights include: ${achievements}. These contributions have directly supported team objectives and reflect a proactive approach to work.<br><br>For continued growth, focus on: ${improvement}. With dedicated effort in these areas, ${name.split(' ')[0]} is well-positioned for advancement in the coming quarter.`;
+  }
+}
+
+// ===========================
+// QR ATTENDANCE (Dashboard extra)
+// ===========================
+function showQR() {
+  showToast('QR code generated for today — scan to check in/out!', 'success');
+}
+</script>
 
 // ===========================
 // TOAST

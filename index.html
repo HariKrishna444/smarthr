@@ -57,6 +57,11 @@
       const _pav2 = document.getElementById('portal-avatar'); if(_pav2)_pav2.textContent=_ini2;
       document.getElementById('sidebar-user-name').textContent = displayName;
       document.getElementById('portal-user-name').textContent = displayName;
+      // Reset login/register buttons
+      const lb = document.querySelector('#tab-login .btn-primary');
+      const rb = document.querySelector('#tab-register .btn-primary');
+      if (lb) { lb.disabled = false; lb.textContent = 'Sign In to SmartHR'; }
+      if (rb) { rb.disabled = false; rb.textContent = 'Create Account'; }
       // Log login event
       logEvent(analytics, 'login', { method: 'email' });
       loadFirestoreEmployees();
@@ -67,18 +72,30 @@
     }
   });
 
-  // Load employees from Firestore (replaces demo data entirely)
+  // Load all data from Firestore on login
   async function loadFirestoreEmployees() {
     try {
       const snap = await getDocs(collection(db, 'employees'));
       if (!snap.empty) {
         window.empData = snap.docs.map(d => ({...d.data(), _id: d.id}));
         renderEmp(window.empData);
-        // Also try to load payroll/doc data from Firestore
-        loadFirestorePayroll();
-        loadFirestoreDocuments();
+        if (typeof refreshDocEmpList === 'function') refreshDocEmpList();
       }
-    } catch(e) { console.warn('Firestore load error:', e); }
+    } catch(e) { console.warn('Firestore employees load error:', e); }
+    // Load remaining collections in parallel
+    loadFirestoreLeaves();
+    loadFirestorePayroll();
+    loadFirestoreDocuments();
+  }
+
+  async function loadFirestoreLeaves() {
+    try {
+      const snap = await getDocs(query(collection(db, 'leaves'), orderBy('createdAt', 'desc')));
+      if (!snap.empty) {
+        window.leaveData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+        if (typeof renderLeave === 'function') renderLeave();
+      }
+    } catch(e) {}
   }
 
   async function loadFirestorePayroll() {
@@ -99,52 +116,61 @@
     } catch(e) {}
   }
 
-  // Firebase Auth handlers
-  window.firebaseLogin = async (email, password) => {
-    return signInWithEmailAndPassword(auth, email, password);
-  };
+  // Firebase Auth
+  window.firebaseLogin  = (email, password) => signInWithEmailAndPassword(auth, email, password);
   window.firebaseLogout = () => signOut(auth);
 
-  // Firestore CRUD
-  window.firestoreAddEmployee = (data) => addDoc(collection(db, 'employees'), {...data, createdAt: serverTimestamp()});
-  window.firestoreUpdateEmployee = (id, data) => updateDoc(doc(db, 'employees', id), data);
+  // Firestore CRUD — employees
+  window.firestoreAddEmployee    = (data) => addDoc(collection(db, 'employees'), {...data, createdAt: serverTimestamp()});
+  window.firestoreUpdateEmployee = (id, data) => updateDoc(doc(db, 'employees', id), {...data, updatedAt: serverTimestamp()});
   window.firestoreDeleteEmployee = (id) => deleteDoc(doc(db, 'employees', id));
-  window.firestoreAddLeave = (data) => addDoc(collection(db, 'leaves'), {...data, createdAt: serverTimestamp()});
-  window.firestoreUpdateLeave = (id, data) => updateDoc(doc(db, 'leaves', id), data);
+
+  // Firestore CRUD — leaves
+  window.firestoreAddLeave    = (data) => addDoc(collection(db, 'leaves'), {...data, createdAt: serverTimestamp()});
+  window.firestoreUpdateLeave = (id, data) => updateDoc(doc(db, 'leaves', id), {...data, updatedAt: serverTimestamp()});
+  window.firestoreDeleteLeave = (id) => deleteDoc(doc(db, 'leaves', id));
+
+  // Firestore CRUD — documents / payroll
   window.firestoreAddDocument = (data) => addDoc(collection(db, 'documents'), {...data, createdAt: serverTimestamp()});
-  window.firestoreAddPayroll = (data) => addDoc(collection(db, 'payroll'), {...data, createdAt: serverTimestamp()});
+  window.firestoreAddPayroll  = (data) => addDoc(collection(db, 'payroll'),   {...data, createdAt: serverTimestamp()});
+
+  // Firestore CRUD — notifications (stored per user)
+  window.firestoreMarkNotifRead = async (notifId) => {
+    try { await updateDoc(doc(db, 'notifications', notifId), {unread: false}); } catch(e) {}
+  };
 
   // Pre-fill document generator forms from Firestore employee data
   window.prefillDocFormsFromEmployee = (emp) => {
     if (!emp) return;
+    const set = (id, val) => { const el=document.getElementById(id); if(el&&val) el.value=val; };
     // Payslip
-    const nameEl = document.getElementById('pdf-emp-name');
-    if (nameEl) nameEl.value = emp.n || emp.name || '';
-    const idEl = document.getElementById('pdf-emp-id');
-    if (idEl) idEl.value = emp.id || emp.empId || '';
-    const desgEl = document.getElementById('pdf-desg');
-    if (desgEl) desgEl.value = emp.desg || emp.designation || '';
-    const deptEl = document.getElementById('pdf-dept');
-    if (deptEl) deptEl.value = emp.d || emp.department || '';
-    // Salary components if stored in Firestore
-    if (emp.basic) { const el=document.getElementById('pdf-basic'); if(el) el.value=emp.basic; }
-    if (emp.da) { const el=document.getElementById('pdf-da'); if(el) el.value=emp.da; }
-    if (emp.hra) { const el=document.getElementById('pdf-hra'); if(el) el.value=emp.hra; }
-    if (emp.special) { const el=document.getElementById('pdf-special'); if(el) el.value=emp.special; }
-    if (emp.pf) { const el=document.getElementById('pdf-pf'); if(el) el.value=emp.pf; }
-    if (emp.bankName) { const el=document.getElementById('pdf-bankname'); if(el) el.value=emp.bankName; }
-    if (emp.bankAcc) { const el=document.getElementById('pdf-bank'); if(el) el.value=emp.bankAcc; }
-    if (emp.ifsc) { const el=document.getElementById('pdf-ifsc'); if(el) el.value=emp.ifsc; }
-    if (emp.pan) { const el=document.getElementById('pdf-pan'); if(el) el.value=emp.pan; }
-    // Appointment form
-    const apptName = document.getElementById('appt-name'); if(apptName) apptName.value = emp.n||emp.name||'';
-    const apptDesg = document.getElementById('appt-desg'); if(apptDesg) apptDesg.value = emp.desg||emp.designation||'';
-    const apptDept = document.getElementById('appt-dept'); if(apptDept) apptDept.value = emp.d||emp.department||'';
-    const apptId   = document.getElementById('appt-id');   if(apptId)   apptId.value   = emp.id||emp.empId||'';
-    // Offer form
-    const offName = document.getElementById('offer-name'); if(offName) offName.value = emp.n||emp.name||'';
-    const offRole = document.getElementById('offer-role'); if(offRole) offRole.value = emp.desg||emp.designation||'';
-    const offDept = document.getElementById('offer-dept'); if(offDept) offDept.value = emp.d||emp.department||'';
+    set('pdf-emp-name', emp.n||emp.name);
+    set('pdf-emp-id',   emp.id||emp.empId);
+    set('pdf-desg',     emp.desg||emp.designation);
+    set('pdf-dept',     emp.d||emp.department);
+    set('pdf-empgrp',   emp.empGroup);
+    set('pdf-basic',    emp.basic);
+    set('pdf-da',       emp.da);
+    set('pdf-hra',      emp.hra);
+    set('pdf-special',  emp.special);
+    set('pdf-pf',       emp.pf);
+    set('pdf-bankname', emp.bankName);
+    set('pdf-bank',     emp.bankAcc);
+    set('pdf-ifsc',     emp.ifsc);
+    set('pdf-pan',      emp.pan);
+    // Appointment
+    set('appt-name', emp.n||emp.name);
+    set('appt-desg', emp.desg||emp.designation);
+    set('appt-dept', emp.d||emp.department);
+    set('appt-id',   emp.id||emp.empId);
+    set('appt-doj',  emp.doj);
+    set('appt-ctc',  emp.ctcAnnual);
+    // Offer/Contract
+    set('offer-name', emp.n||emp.name);
+    set('offer-role', emp.desg||emp.designation);
+    set('offer-dept', emp.d||emp.department);
+    set('offer-email',emp.email);
+    set('offer-ctc',  emp.ctcMonthly||emp.ctc);
   };
 </script>
 
@@ -658,10 +684,7 @@ function showToast(msg, type='info') {
       </div>
       <button class="btn-primary" onclick="handleLogin()">Sign In to SmartHR</button>
       <div class="login-error" id="login-error"></div>
-      <div class="demo-hint">
-        <strong>Demo Mode:</strong> Enter any email &amp; password to explore.<br>
-        Firebase Auth will be active once you add your API keys.
-      </div>
+
     </div>
     <!-- Register -->
     <div id="tab-register" style="display:none">
@@ -1713,84 +1736,59 @@ function go(name) {
 document.querySelectorAll('.nav-item').forEach(n => n.addEventListener('click', () => go(n.dataset.panel)));
 
 // ===========================
-// AUTH (Firebase + Demo mode)
+// AUTH (Firebase only)
 // ===========================
+const AUTH_ERRORS = {
+  'auth/invalid-email':          'Please enter a valid email address.',
+  'auth/user-not-found':         'No account found with this email.',
+  'auth/wrong-password':         'Incorrect password. Please try again.',
+  'auth/invalid-credential':     'Incorrect email or password.',
+  'auth/too-many-requests':      'Too many failed attempts. Please wait a few minutes.',
+  'auth/user-disabled':          'This account has been disabled. Contact HR.',
+  'auth/network-request-failed': 'Network error. Please check your connection.',
+  'auth/operation-not-allowed':  'Email/Password sign-in is not enabled. Enable it in Firebase Console → Authentication → Sign-in method.',
+  'auth/email-already-in-use':   'An account with this email already exists. Please sign in instead.',
+  'auth/weak-password':          'Password must be at least 6 characters.',
+};
+function fbErr(e) {
+  return AUTH_ERRORS[e.code] || e.message.replace('Firebase: ','').replace(/\s*\(auth\/[^)]+\)\.?/,'').trim();
+}
+
 async function handleLogin() {
-  const email = document.getElementById('login-email').value.trim();
+  const email    = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
-  const err = document.getElementById('login-error');
+  const btn      = document.querySelector('#tab-login .btn-primary');
+  const err      = document.getElementById('login-error');
   err.style.display = 'none';
-
-  if (!email || !password) { err.textContent = 'Please enter email and password.'; err.style.display = 'block'; return; }
-
-  // Try Firebase Auth first
-  if (window._firebaseAuth && window.firebaseLogin) {
-    try {
-      await window.firebaseLogin(email, password);
-      return; // onAuthStateChanged handles the rest
-    } catch (e) {
-      // Fall back to demo mode when Firebase isn't set up yet
-      const fallbackCodes = ['auth/invalid-api-key','auth/network-request-failed','auth/invalid-credential','auth/configuration-not-found'];
-      if (fallbackCodes.some(c => e.code === c) || e.message.includes('API key')) {
-        demoLogin(email);
-      } else if (e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password' || e.code === 'auth/invalid-login-credentials') {
-        err.textContent = 'Incorrect email or password.';
-        err.style.display = 'block';
-      } else {
-        err.textContent = e.message.replace('Firebase: ','').replace(/\s*\(auth\/[^)]+\)/,'');
-        err.style.display = 'block';
-      }
-    }
-  } else {
-    demoLogin(email);
+  if (!email || !password) { err.textContent = 'Please enter your email and password.'; err.style.display = 'block'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    await window._firebaseFn.signInWithEmailAndPassword(window._firebaseAuth, email, password);
+    // onAuthStateChanged handles UI
+  } catch(e) {
+    err.textContent = fbErr(e); err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Sign In to SmartHR';
   }
 }
 
-function demoLogin(email) {
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app-shell').style.display = 'flex';
-  const name = email.split('@')[0];
-  const _ini = name.replace(/[^a-zA-Z ]/g,' ').trim().split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||name.slice(0,2).toUpperCase();
-  document.getElementById('topbar-user-name').textContent = _ini;
-  const _pav = document.getElementById('portal-avatar'); if(_pav)_pav.textContent=_ini;
-  document.getElementById('sidebar-user-name').textContent = name;
-  document.getElementById('portal-user-name').textContent = name;
-  showToast('Welcome to SmartHR!', 'success');
-}
-
 async function handleRegister() {
-  const name = document.getElementById('reg-name').value.trim();
-  const email = document.getElementById('reg-email').value.trim();
+  const name     = document.getElementById('reg-name').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
   const password = document.getElementById('reg-password').value;
-  const err = document.getElementById('reg-error');
+  const btn      = document.querySelector('#tab-register .btn-primary');
+  const err      = document.getElementById('reg-error');
   err.style.display = 'none';
-
   if (!name || !email || !password) { err.textContent = 'All fields are required.'; err.style.display = 'block'; return; }
   if (password.length < 6) { err.textContent = 'Password must be at least 6 characters.'; err.style.display = 'block'; return; }
-
-  if (window._firebaseAuth && window._firebaseFn) {
-    try {
-      const cred = await window._firebaseFn.createUserWithEmailAndPassword(window._firebaseAuth, email, password);
-      // Set display name immediately after registration
-      await window._firebaseFn.updateProfile(cred.user, { displayName: name });
-      showToast('Account created! Welcome to SmartHR, ' + name + '!', 'success');
-    } catch(e) {
-      if (e.code === 'auth/operation-not-allowed') {
-        // Email/Password sign-in not enabled in Firebase console — fall back gracefully
-        demoLogin(email);
-        showToast('Demo mode: Enable Email/Password auth in Firebase Console for real accounts.', 'info');
-      } else if (e.code === 'auth/email-already-in-use') {
-        err.textContent = 'An account with this email already exists. Please log in instead.';
-        err.style.display = 'block';
-      } else if (e.code === 'auth/invalid-api-key' || e.code === 'auth/network-request-failed') {
-        demoLogin(email);
-      } else {
-        err.textContent = e.message.replace('Firebase: ','').replace(/\s*\(auth\/[^)]+\)/,'');
-        err.style.display = 'block';
-      }
-    }
-  } else {
-    demoLogin(email);
+  btn.disabled = true; btn.textContent = 'Creating account…';
+  try {
+    const cred = await window._firebaseFn.createUserWithEmailAndPassword(window._firebaseAuth, email, password);
+    await window._firebaseFn.updateProfile(cred.user, { displayName: name });
+    showToast('Account created! Welcome, ' + name + '!', 'success');
+    // onAuthStateChanged handles UI
+  } catch(e) {
+    err.textContent = fbErr(e); err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Create Account';
   }
 }
 
@@ -1962,7 +1960,8 @@ async function deleteEmployee(i) {
 // ===========================
 // LEAVE
 // ===========================
-const leaveData = [
+// Default local data — replaced by Firestore on login
+window.leaveData = window.leaveData || [
   {e:'Priya Sharma', t:'Sick Leave', f:'04 Nov', to:'05 Nov', d:2, r:'Fever', s:'approved'},
   {e:'Vikram Rao', t:'Casual Leave', f:'08 Nov', to:'08 Nov', d:1, r:'Personal work', s:'pending'},
   {e:'Amit Singh', t:'Earned Leave', f:'11 Nov', to:'15 Nov', d:5, r:'Family vacation', s:'approved'},
@@ -1970,16 +1969,29 @@ const leaveData = [
   {e:'Sunita Joshi', t:'Casual Leave', f:'12 Nov', to:'12 Nov', d:1, r:'Festival', s:'pending'},
   {e:'Pooja Desai', t:'Earned Leave', f:'18 Nov', to:'22 Nov', d:5, r:'Travel', s:'rejected'},
 ];
+// Alias for local references
+Object.defineProperty(window, 'leaveData', { get(){ return window._leaveData||[]; }, set(v){ window._leaveData=v; } });
+window.leaveData = [
+  {e:'Priya Sharma', t:'Sick Leave', f:'04 Nov', to:'05 Nov', d:2, r:'Fever', s:'approved'},
+  {e:'Vikram Rao', t:'Casual Leave', f:'08 Nov', to:'08 Nov', d:1, r:'Personal work', s:'pending'},
+  {e:'Amit Singh', t:'Earned Leave', f:'11 Nov', to:'15 Nov', d:5, r:'Family vacation', s:'approved'},
+  {e:'Neha Patel', t:'Sick Leave', f:'06 Nov', to:'06 Nov', d:1, r:'Doctor visit', s:'pending'},
+  {e:'Sunita Joshi', t:'Casual Leave', f:'12 Nov', to:'12 Nov', d:1, r:'Festival', s:'pending'},
+  {e:'Pooja Desai', t:'Earned Leave', f:'18 Nov', to:'22 Nov', d:5, r:'Travel', s:'rejected'},
+];
+const leaveData = window.leaveData;
 
 function leavePill(s) { return s==='approved'?'pill-g':s==='rejected'?'pill-r':'pill-o'; }
 function renderLeave() {
-  document.getElementById('leave-tbody').innerHTML = leaveData.map((l,i) => `
+  const data = window.leaveData;
+  document.getElementById('leave-tbody').innerHTML = data.map((l,i) => `
     <tr>
-      <td>${l.e}</td><td>${l.t}</td><td>${l.f}</td><td>${l.to}</td><td>${l.d}</td>
-      <td style="color:var(--text-muted);font-size:12px">${l.r}</td>
-      <td><span class="pill ${leavePill(l.s)}" id="ls-${i}">${l.s.charAt(0).toUpperCase()+l.s.slice(1)}</span></td>
+      <td>${l.e||l.employee||''}</td><td>${l.t||l.type||''}</td>
+      <td>${l.f||l.from||''}</td><td>${l.to||''}</td><td>${l.d||1}</td>
+      <td style="color:var(--text-muted);font-size:12px">${l.r||l.reason||''}</td>
+      <td><span class="pill ${leavePill(l.s||l.status)}" id="ls-${i}">${(l.s||l.status||'pending').charAt(0).toUpperCase()+(l.s||l.status||'pending').slice(1)}</span></td>
       <td id="la-${i}" style="padding:10px 12px">
-        ${l.s==='pending'?`<span style="display:flex;gap:6px">
+        ${(l.s||l.status)==='pending'?`<span style="display:flex;gap:6px">
           <button style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer" onclick="actLeave(${i},'approved')">✓ Approve</button>
           <button style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer" onclick="actLeave(${i},'rejected')">✗ Reject</button>
           </span>`:'—'}
@@ -2008,14 +2020,14 @@ async function submitLeave() {
   const to = document.getElementById('lv-to').value;
   const reason = document.getElementById('lv-reason').value;
   if (!from || !reason) { showToast('Please fill all required fields','error'); return; }
-  const newLeave = {e:'You', t:type, f:from, to:to||from, d:1, r:reason, s:'pending'};
+  const empName = window._currentUser?.displayName || window._currentUser?.email?.split('@')[0] || 'You';
+  const newLeave = {e: empName, t:type, f:from, to:to||from, d:1, r:reason, s:'pending'};
   leaveData.push(newLeave);
   // Save to Firestore
   if (window.firestoreAddLeave) {
     try {
       const ref = await window.firestoreAddLeave({
-        employee: window._currentUser?.displayName || window._currentUser?.email || 'You',
-        type, from, to: to||from, reason, status: 'pending'
+        employee: empName, type, from, to: to||from, reason, status: 'pending'
       });
       newLeave._id = ref.id;
     } catch(e) {}
@@ -2308,12 +2320,12 @@ async function generatePDF(type) {
   function inr(n) { return parseInt(n||0).toLocaleString('en-IN'); }
 
   // ════════════════════════════════════════════════════════════════
-  //  PAYSLIP — Sreenidhi University reference style
+  //  PAYSLIP — pixel-accurate Sreenidhi/SmartHR reference style
   // ════════════════════════════════════════════════════════════════
   if (type === 'payslip') {
-    const empName  = document.getElementById('pdf-emp-name')?.value  || 'Aarav Mehta';
-    const empId    = document.getElementById('pdf-emp-id')?.value    || 'EMP-0042';
-    const dept     = document.getElementById('pdf-dept')?.value      || 'Engineering';
+    const empName  = document.getElementById('pdf-emp-name')?.value  || 'Arvapalli Harikrishna';
+    const empId    = document.getElementById('pdf-emp-id')?.value    || '60000124';
+    const dept     = document.getElementById('pdf-dept')?.value      || 'CSE';
     const month    = document.getElementById('pdf-month')?.value     || 'May 2026';
     const basic    = parseInt(document.getElementById('pdf-basic')?.value  || '13333');
     const da       = parseInt(document.getElementById('pdf-da')?.value     || '12000');
@@ -2323,506 +2335,500 @@ async function generatePDF(type) {
     const profTax  = parseInt(document.getElementById('pdf-ptax')?.value   || '200');
     const desg     = document.getElementById('pdf-desg')?.value      || 'Lab Assistant';
     const empGroup = document.getElementById('pdf-empgrp')?.value    || 'Non-Teaching';
-    const bankAcc  = document.getElementById('pdf-bank')?.value      || '';
+    const bankAcc  = document.getElementById('pdf-bank')?.value      || '925010049320478';
     const bankName = document.getElementById('pdf-bankname')?.value  || 'Axis Bank';
-    const pan      = document.getElementById('pdf-pan')?.value       || '';
-    const ifsc     = document.getElementById('pdf-ifsc')?.value      || '';
+    const pan      = document.getElementById('pdf-pan')?.value       || 'BFZPH4258E';
+    const ifsc     = document.getElementById('pdf-ifsc')?.value      || 'UTIB0000027';
     const totalEarnings = basic + da + hra + special;
     const totalDeductions = pf + profTax;
     const netPay = totalEarnings - totalDeductions;
-    const companyName = document.getElementById('pdf-company')?.value || 'SmartHR Technologies';
-    const companyAddr = document.getElementById('pdf-addr')?.value   || 'Hyderabad, Telangana';
+    const companyName = document.getElementById('pdf-company')?.value || 'SmartHR Technologies Pvt. Ltd.';
+    const companyAddr = document.getElementById('pdf-addr')?.value   || 'Hyderabad, Telangana 500081';
 
-    // ── LOGO / HEADER ──
-    rect(0, 0, W, 28, HDR, null);
-    // Company name (bold white, centered-ish)
-    txt(companyName, W/2, 11, {size:16, bold:true, color:WHT, align:'center'});
-    txt(companyAddr, W/2, 17, {size:9, color:[210,235,220], align:'center'});
-    txt('Payslip for the Month- ' + month, W/2, 23, {size:10, bold:true, color:WHT, align:'center'});
+    // ── HEADER (dark green bar) ──
+    rect(0, 0, W, 30, HDR, null);
+    txt(companyName, W/2, 11, {size:15, bold:true, color:WHT, align:'center'});
+    txt(companyAddr, W/2, 17, {size:8.5, color:[210,235,220], align:'center'});
+    txt('Payslip for the Month- ' + month, W/2, 24, {size:10, bold:true, color:WHT, align:'center'});
 
-    // ── INFO TABLE ──
-    let y = 30;
-    rect(14, y, W-28, 30, null, [100,100,100]);
-    // Left col
-    const info = [
-      ['Employee Code', empId], ['Name', empName], ['Emp.Group', empGroup], ['Gender', 'Male']
-    ];
-    const info2 = [
-      ['Designation', desg], ['Department', dept], ['Bank Name', bankName], ['Bank A/c No', bankAcc||'—']
-    ];
-    const info3 = [
-      ['IFSC No', ifsc||'—'], ['UAN No', ''], ['PAN No', pan||'—'], ['ESI No', '']
-    ];
-    // Column widths: page=210mm, margins=14 each side → usable=182mm split into 3 cols
-    // Col1: 14..73 (59mm), Col2: 73..136 (63mm), Col3: 136..196 (60mm)
-    const iH = 6.5, iX = 14;
-    const col1L=iX, col1V=iX+26, col2L=iX+62, col2V=iX+88, col3L=iX+122, col3V=iX+143;
-    info.forEach(([l,v],i) => {
-      txt(l, col1L+1.5, y+3+i*iH, {size:7.5, bold:true});
-      txt(': '+v, col1V, y+3+i*iH, {size:7.5});
+    // ── EMPLOYEE INFO TABLE (3 columns inside a bordered box) ──
+    let y = 32;
+    const iBoxH = 32;
+    rect(14, y, W-28, iBoxH, WHT, [100,100,100], 0.4);
+
+    // Column boundaries (all absolute x in mm)
+    const iH = 6.5;         // row height
+    const iy = y + 2.5;     // first row y baseline
+    // Col1: label 16..40, value 40..74
+    // Col2: label 75..99, value 99..135
+    // Col3: label 136..158, value 158..194
+    const c1L=16, c1V=42, c2L=76, c2V=101, c3L=137, c3V=159;
+
+    const info1 = [['Employee Code',empId],['Name',empName],['Emp.Group',empGroup],['Gender','Male']];
+    const info2 = [['Designation',desg],['Department',dept],['Bank Name',bankName],['Bank A/c No',bankAcc||'\u2014']];
+    const info3 = [['IFSC No',ifsc||'\u2014'],['UAN No',''],['PAN No',pan||'\u2014'],['ESI No','']];
+
+    info1.forEach(([l,v],i)=>{
+      txt(l, c1L, iy+i*iH, {size:7.5, bold:true});
+      txt(': '+v, c1V, iy+i*iH, {size:7.5});
     });
-    info2.forEach(([l,v],i) => {
-      txt(l, col2L, y+3+i*iH, {size:7.5, bold:true});
-      txt(': '+v, col2V, y+3+i*iH, {size:7.5});
+    info2.forEach(([l,v],i)=>{
+      txt(l, c2L, iy+i*iH, {size:7.5, bold:true});
+      txt(': '+v, c2V, iy+i*iH, {size:7.5});
     });
-    info3.forEach(([l,v],i) => {
-      txt(l, col3L, y+3+i*iH, {size:7.5, bold:true});
-      txt(': '+v, col3V, y+3+i*iH, {size:7.5});
+    info3.forEach(([l,v],i)=>{
+      txt(l, c3L, iy+i*iH, {size:7.5, bold:true});
+      txt(': '+v, c3V, iy+i*iH, {size:7.5});
     });
-    vline(iX+60, y, y+30, 0.2, GRY);
-    vline(iX+120, y, y+30, 0.2, GRY);
-    y += 32;
-
-    // ── TAKE HOME BOX ──
-    rect(14, y, W-28, 10, LGRY, GRY);
-    txt('Take Home Pay = Total Earnings + Total Arrears - Total deductions', 16, y+4, {size:8});
-    txt(`${inr(netPay)} = ${inr(totalEarnings)} + 0.00 - ${inr(totalDeductions)}`, 16, y+8, {size:8, bold:true});
-    y += 12;
-
-    // ── EARNINGS TABLE HEADER ──
-    // Table layout: 182mm usable width split into 6 logical cols
-    // [Desc|Gross|Earn.Desc|Earn.Amt|Arr.Desc|Arr.Amt] | [Ded.Desc|Ded.Amt]
-    // Left half (earnings): cols A-D; Right half (deductions): cols E-F
-    const LX=14, RX=W-14, TW=RX-LX;
-    // Col x-positions (absolute mm)
-    const c1=14;   // Earnings Description (width 44)
-    const c2=58;   // Gross Amount (width 22)
-    const c3=80;   // Earnings Amount col (width 22)
-    const c4=102;  // Arrears Description (width 22)
-    const c5=124;  // Arrears Amount (width 14)
-    const c6=138;  // Deductions Description (width 44)
-    const c7=182;  // Deductions Amount (right edge, width 14)
-    const cW_ded = TW-(c6-LX); // width of deduction section
-    const tHdr=8;
-
-    // header row
-    rect(LX, y, c6-LX, tHdr, [60,100,80], null);
-    txt('Description', c1+2, y+5.5, {size:7.5, bold:true, color:WHT});
-    txt('Gross', c2+2, y+5.5, {size:7.5, bold:true, color:WHT});
-    txt('Earnings', c3+2, y+5.5, {size:7.5, bold:true, color:WHT});
-    txt('Arrears', c4+2, y+5.5, {size:7.5, bold:true, color:WHT});
-    rect(c6, y, cW_ded, tHdr, [80,60,60], null);
-    txt('Deductions', c6+4, y+5.5, {size:7.5, bold:true, color:WHT});
-    // vertical dividers in header
+    // vertical dividers
     doc.setDrawColor(...GRY); doc.setLineWidth(0.2);
-    [c2,c3,c4,c5,c6].forEach(x => doc.line(x,y,x,y+tHdr));
-    // Sub-header
-    y += tHdr;
-    rect(LX, y, TW, tHdr-2, [200,220,210], GRY);
-    txt('Description', c1+2, y+4.5, {size:7, bold:true});
-    txt('Amount', c2+2, y+4.5, {size:7, bold:true});
-    txt('Description', c3+2, y+4.5, {size:7, bold:true});
-    txt('Amount', c4+2, y+4.5, {size:7, bold:true});
-    txt('Description', c6+2, y+4.5, {size:7, bold:true});
-    txt('Amount', c7-12, y+4.5, {size:7, bold:true});
-    y += tHdr-2;
+    doc.line(74, y, 74, y+iBoxH);
+    doc.line(135, y, 135, y+iBoxH);
+    y += iBoxH + 2;
 
-    // Draw vertical dividers for table
-    const tRowH = 7;
+    // ── TAKE HOME FORMULA BOX ──
+    rect(14, y, W-28, 11, LGRY, [180,180,180], 0.3);
+    txt('Take Home Pay = Total Earnings + Total Arrears - Total deductions', 16, y+4.5, {size:8});
+    txt(inr(netPay)+' = '+inr(totalEarnings)+' + 0.00 - '+inr(totalDeductions), 16, y+9, {size:8.5, bold:true});
+    y += 13;
+
+    // ── EARNINGS/DEDUCTIONS TABLE ──
+    // Full usable width = 14..196 = 182mm
+    // Col positions: [Earn.Desc(44)|Gross(22)|Earnings(22)|Arr.Desc(20)|Arr.Amt(14)] | [Ded.Desc(44)|Ded.Amt(16)]
+    const LX=14, RX=196;
+    const eDescW=44, grossW=22, earnW=22, arrDescW=20, arrAmtW=14;  // earn section = 122mm
+    const dedDescW=44, dedAmtW=16;                                   // ded section  =  60mm
+    const eX=LX;
+    const gX=eX+eDescW;       // 58
+    const enX=gX+grossW;      // 80
+    const adX=enX+earnW;      // 102
+    const aaX=adX+arrDescW;   // 122
+    const dX=aaX+arrAmtW;     // 136
+    const daX=dX+dedDescW;    // 180
+    const tHdr=8, subHdr=6;
+
+    // Header row — green left, red-tint right
+    rect(LX, y, dX-LX, tHdr, [45,110,75], null);
+    rect(dX, y, daX+dedAmtW-dX, tHdr, [110,45,45], null);
+    txt('Description', eX+2, y+5.5, {size:7.5, bold:true, color:WHT});
+    txt('Gross', gX+2, y+5.5, {size:7.5, bold:true, color:WHT});
+    txt('Earnings', enX+2, y+5.5, {size:7.5, bold:true, color:WHT});
+    txt('Arrears', adX+2, y+5.5, {size:7.5, bold:true, color:WHT});
+    txt('Deductions', dX+4, y+5.5, {size:7.5, bold:true, color:WHT});
+    // draw dividers in header
+    doc.setDrawColor(255,255,255); doc.setLineWidth(0.15);
+    [gX,enX,adX,aaX,dX].forEach(x=>doc.line(x,y,x,y+tHdr));
+    y += tHdr;
+
+    // Sub-header row
+    rect(LX, y, RX-LX, subHdr, [200,220,210], [180,180,180], 0.2);
+    txt('Description', eX+2, y+4.2, {size:7, bold:true});
+    txt('Amount', gX+2, y+4.2, {size:7, bold:true});
+    txt('Description', enX+2, y+4.2, {size:7, bold:true});
+    txt('Amount', adX+2, y+4.2, {size:7, bold:true});
+    txt('Description', dX+2, y+4.2, {size:7, bold:true});
+    txt('Amount', daX+2, y+4.2, {size:7, bold:true});
+    doc.setDrawColor(...GRY); doc.setLineWidth(0.15);
+    [gX,enX,adX,aaX,dX,daX].forEach(x=>doc.line(x,y,x,y+subHdr));
+    y += subHdr;
+
+    // Data rows
     const earningRows = [
-      ['Basic Salary', basic, '0.00'],
-      ['DA', da, '0.00'],
-      ['HRA', hra, '0.00'],
-      ['Special Allowance', special, '0.00'],
+      ['Basic Salary', basic],
+      ['DA', da],
+      ['HRA', hra],
+      ['Special Allowance', special],
     ];
     const dedRows = [
       ['Ee PF contribution', pf],
       ['Prof Tax - split period', profTax],
     ];
-    const maxRows = Math.max(earningRows.length, dedRows.length);
+    const tRowH = 7;
     const tStartY = y;
+    const maxRows = Math.max(earningRows.length, dedRows.length);
 
-    earningRows.forEach(([desc, gross, arr], i) => {
+    earningRows.forEach(([desc, gross], i) => {
       const ry = y + i*tRowH;
-      if(i%2===1) rect(LX, ry, TW, tRowH, LGRY, null);
-      rect(LX, ry, TW, tRowH, null, GRY, 0.15);
-      // clip description to column width
-      const descLines = doc.splitTextToSize(desc, c2-c1-3);
-      txt(descLines[0], c1+2, ry+4.8, {size:7.5});
-      txt(inr(gross), c2+2, ry+4.8, {size:7.5});
-      txt(inr(gross), c3+2, ry+4.8, {size:7.5});
-      txt(arr, c4+2, ry+4.8, {size:7.5});
-      // vertical dividers
+      if(i%2===1) rect(LX, ry, dX-LX, tRowH, LGRY, null);
       doc.setDrawColor(...GRY); doc.setLineWidth(0.15);
-      [c2,c3,c4,c5,c6].forEach(x => doc.line(x,ry,x,ry+tRowH));
+      doc.rect(LX, ry, dX-LX, tRowH, 'S');
+      txt(doc.splitTextToSize(desc, eDescW-3)[0], eX+2, ry+4.8, {size:7.5});
+      txt(inr(gross), gX+2, ry+4.8, {size:7.5});
+      txt(inr(gross), enX+2, ry+4.8, {size:7.5});
+      txt('0.00', adX+2, ry+4.8, {size:7.5});
+      [gX,enX,adX,aaX].forEach(x=>doc.line(x,ry,x,ry+tRowH));
     });
     dedRows.forEach(([desc, amt], i) => {
       const ry = y + i*tRowH;
-      const dedDesc = doc.splitTextToSize(desc, c7-c6-3);
-      txt(dedDesc[0], c6+2, ry+4.8, {size:7.5});
-      txt(inr(amt), c7-2, ry+4.8, {size:7.5, align:'right'});
+      if(i%2===1) rect(dX, ry, RX-dX, tRowH, [248,235,235], null);
+      doc.setDrawColor(...GRY); doc.setLineWidth(0.15);
+      doc.rect(dX, ry, RX-dX, tRowH, 'S');
+      txt(doc.splitTextToSize(desc, dedDescW-3)[0], dX+2, ry+4.8, {size:7.5});
+      txt(inr(amt), daX+2, ry+4.8, {size:7.5, align:'right'});
+      doc.line(daX, ry, daX, ry+tRowH);
     });
-
     y += maxRows * tRowH;
+
     // Totals row
-    rect(LX, y, TW, tRowH+1, [200,220,210], GRY);
-    txt('Total Earnings', c1+2, y+5.5, {size:7.5, bold:true});
-    txt(inr(totalEarnings), c2+2, y+5.5, {size:7.5, bold:true});
-    txt(inr(totalEarnings), c3+2, y+5.5, {size:7.5, bold:true});
-    txt('Total Arrears', c4+2, y+5.5, {size:7.5});
-    txt('0.00', c5+2, y+5.5, {size:7.5});
-    txt('Total deductions', c6+2, y+5.5, {size:7.5, bold:true});
-    txt(inr(totalDeductions), c7-2, y+5.5, {size:7.5, bold:true, align:'right'});
+    rect(LX, y, RX-LX, tRowH+1, [200,220,210], [180,180,180], 0.25);
+    txt('Total Earnings', eX+2, y+5.5, {size:7.5, bold:true});
+    txt(inr(totalEarnings), gX+2, y+5.5, {size:7.5, bold:true});
+    txt(inr(totalEarnings), enX+2, y+5.5, {size:7.5, bold:true});
+    txt('Total Arrears', adX+2, y+5.5, {size:7.5});
+    txt('0.00', aaX+2, y+5.5, {size:7.5});
+    txt('Total deductions', dX+2, y+5.5, {size:7.5, bold:true});
+    txt(inr(totalDeductions), daX+2, y+5.5, {size:7.5, bold:true, align:'right'});
     doc.setDrawColor(...GRY); doc.setLineWidth(0.2);
-    [c2,c3,c4,c5,c6].forEach(x => doc.line(x,y,x,y+tRowH+1));
-    y += tRowH+1;
+    [gX,enX,adX,aaX,dX,daX].forEach(x=>doc.line(x,y,x,y+tRowH+1));
+    y += tRowH+2;
 
-    // Net pay row
-    rect(LX, y, TW, 9, [40,80,60], GRY);
-    const netWords = 'NET PAY: ' + inr(netPay);
-    txt('Take Home Pay : ' + inr(netPay) + '  (' + numberToWords(netPay).toUpperCase() + ' RUPEES)', 
-        W/2, y+5.8, {size:8.5, bold:true, color:WHT, align:'center'});
-    y += 11;
+    // Net Pay bar
+    rect(LX, y, RX-LX, 10, [35,90,60], null);
+    txt('Take Home Pay : '+inr(netPay)+'  ('+numberToWords(netPay).toUpperCase()+' RUPEES)',
+        W/2, y+6.5, {size:8.5, bold:true, color:WHT, align:'center'});
+    y += 12;
 
-    // ── BOTTOM SECTION ── (3-col: Arrears | Working Details | Form 16)
-    const botY = y, botH = 55;
-    // b1: Arrears (35mm), b2: Working Details (55mm), b3: Form 16 (rest ~92mm)
-    const b1X=LX, b1W=35, b2X=LX+35, b2W=55, b3X=LX+90, b3W=TW-90;
+    // ── BOTTOM 3-column: Arrears | Working Details | Form 16 ──
+    const botY = y, botH = 56;
+    const b1W=36, b2W=56, b3W=RX-LX-b1W-b2W;
+    const b1X=LX, b2X=LX+b1W, b3X=LX+b1W+b2W;
 
-    // Arrears section
-    rect(b1X, botY, b1W, botH, null, GRY);
-    rect(b1X, botY, b1W, 7, TBHDR, GRY);
-    txt('Sum of Arrears', b1X+2, botY+4.8, {size:7.5, bold:true});
-    txt('Month', b1X+2, botY+13, {size:7.5, bold:true});
-    txt('Sum Of Amount', b1X+2, botY+19, {size:7.5, bold:true});
+    // Arrears
+    rect(b1X, botY, b1W, botH, null, [180,180,180], 0.3);
+    rect(b1X, botY, b1W, 7, TBHDR, [180,180,180], 0.3);
+    txt('Sum of Arrears', b1X+2, botY+5, {size:7.5, bold:true});
+    txt('Month', b1X+2, botY+14, {size:7.5, bold:true});
+    txt('Sum Of Amount', b1X+2, botY+21, {size:7.5, bold:true});
 
     // Working Details
-    rect(b2X, botY, b2W, botH, null, GRY);
-    rect(b2X, botY, b2W, 7, TBHDR, GRY);
-    txt('Working Details', b2X+2, botY+4.8, {size:7.5, bold:true});
-    const wdRows = [['Month Days','31.00'],['Absences','0.00'],['Payable Days','31.00']];
-    wdRows.forEach(([l,v],i) => {
-      txt(l, b2X+2, botY+14+i*10, {size:8});
-      txt(v, b2X+b2W-20, botY+14+i*10, {size:8, bold:true});
+    rect(b2X, botY, b2W, botH, null, [180,180,180], 0.3);
+    rect(b2X, botY, b2W, 7, TBHDR, [180,180,180], 0.3);
+    txt('Working Details', b2X+2, botY+5, {size:7.5, bold:true});
+    [['Month Days','31.00'],['Absences','0.00'],['Payable Days','31.00']].forEach(([l,v],i) => {
       hline(botY+8+i*10, b2X, b2X+b2W, 0.15, GRY);
+      txt(l, b2X+2, botY+15+i*10, {size:8});
+      txt(v, b2X+b2W-4, botY+15+i*10, {size:8, bold:true, align:'right'});
     });
 
     // Form 16 Summary
-    rect(b3X, botY, b3W, botH, null, GRY);
-    rect(b3X, botY, b3W, 7, TBHDR, GRY);
-    txt('Form 16 Summary', b3X+2, botY+4.8, {size:7.5, bold:true});
-    const grossSalary = parseInt(totalEarnings*12);
-    const f16Rows = [
-      ['Gross Salary', inr(grossSalary)],
+    rect(b3X, botY, b3W, botH, null, [180,180,180], 0.3);
+    rect(b3X, botY, b3W, 7, TBHDR, [180,180,180], 0.3);
+    txt('Form 16 Summary', b3X+2, botY+5, {size:7.5, bold:true});
+    const grossAnnual = totalEarnings * 12;
+    const f16 = [
+      ['Gross Salary', inr(grossAnnual)],
       ['Std Deduction', '75,000'],
       ['Exemption U/S10', '0.00'],
-      ['Balance', inr(grossSalary)],
+      ['Balance', inr(grossAnnual)],
       ['Emp mnt tax(Prof Tax)', '0.00'],
       ['Aggrg Deduction', '75,000'],
-      ['Incm under Hd Salary', inr(grossSalary-75000)],
-      ['Total Income', inr(Math.max(0,grossSalary-75000))],
+      ['Incm under Hd Salary', inr(Math.max(0,grossAnnual-75000))],
+      ['Total Income', inr(Math.max(0,grossAnnual-75000))],
       ['Income Tax', '0'],
     ];
-    f16Rows.forEach(([l,v],i) => {
-      if(l==='Total Income') doc.setFont('helvetica','bold');
-      const f16Label = doc.splitTextToSize(l, b3W-20);
-      txt(f16Label[0], b3X+2, botY+12+i*4.8, {size:6.5});
-      txt(v, b3X+b3W-2, botY+12+i*4.8, {size:6.5, bold:l==='Total Income', align:'right'});
+    f16.forEach(([l,v],i) => {
+      const isBold = l==='Total Income';
+      txt(l, b3X+2, botY+11+i*5, {size:6.5, bold:isBold});
+      txt(v, b3X+b3W-2, botY+11+i*5, {size:6.5, bold:isBold, align:'right'});
     });
 
-    y = botY + botH + 5;
-    rect(LX, y, TW, 7, null, GRY);
-    txt('This Payslip is computer generated and does not require any signature', 
+    y = botY + botH + 4;
+    rect(LX, y, RX-LX, 7, null, [180,180,180], 0.25);
+    txt('This Payslip is computer generated and does not require any signature.',
         W/2, y+4.8, {size:7.5, color:[80,80,80], align:'center'});
 
-    doc.save('Payslip_' + empName.replace(/ /g,'_') + '_' + month.replace(/ /g,'-') + '.pdf');
+    doc.save('Payslip_'+empName.replace(/ /g,'_')+'_'+month.replace(/ /g,'-')+'.pdf');
 
   // ════════════════════════════════════════════════════════════════
-  //  CONTRACT / OFFER LETTER — Sreenidhi reference style (white, formal)
+  //  CONTRACT / OFFER LETTER — formal white style (Annexure-I included)
   // ════════════════════════════════════════════════════════════════
   } else if (type === 'offer') {
-    const name   = document.getElementById('offer-name')?.value   || 'Candidate Name';
+    const name   = document.getElementById('offer-name')?.value   || 'Arvapalli Harikrishna';
     const role   = document.getElementById('offer-role')?.value   || 'Technical Trainer';
     const dept   = document.getElementById('offer-dept')?.value   || 'Computer Science & Engineering';
-    const doj    = document.getElementById('offer-date')?.value   || '01-Jan-2026';
-    const doe    = document.getElementById('offer-enddate')?.value|| '30-Jun-2026';
-    const ctcM   = parseInt(document.getElementById('offer-ctc')?.value   || '46666');
+    const doj    = document.getElementById('offer-date')?.value   || '2026-06-11';
+    const doe    = document.getElementById('offer-enddate')?.value|| '2026-12-18';
+    const ctcM   = parseInt(document.getElementById('offer-ctc')?.value   || '55555');
     const mgr    = document.getElementById('offer-mgr')?.value    || 'Head of the Department';
     const chro   = document.getElementById('offer-chro')?.value   || 'Dr. Ashish Mittal';
-    const companyName = document.getElementById('pdf-company')?.value || 'SmartHR Technologies';
-    const companyAddr = document.getElementById('pdf-addr')?.value   || 'Hyderabad, Telangana';
+    const companyName = document.getElementById('pdf-company')?.value || 'Innovative Spirits Pvt. Ltd.';
+    const companyAddr = document.getElementById('pdf-addr')?.value   || 'Hyderabad, Telangana 500081';
     const today = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+    const addr1  = document.getElementById('offer-addr1')?.value || '';
+    const addr2  = document.getElementById('offer-addr2')?.value || '';
+    const emailV = document.getElementById('offer-email')?.value  || '';
 
-    // Address block — candidate
-    const addr1 = document.getElementById('offer-addr1')?.value || '1-120/C, Sector 5,';
-    const addr2 = document.getElementById('offer-addr2')?.value || 'City, State.';
-    const email = document.getElementById('offer-email')?.value || '';
-
-    // WHITE background
     rect(0, 0, W, H, WHT, null);
+    // Top green accent bar
+    rect(0, 0, W, 2.5, [30,100,60], null);
+    // Company header right-aligned
+    txt(companyName, W-14, 13, {size:16, bold:true, color:HDR, align:'right'});
+    txt(companyAddr, W-14, 19, {size:8, color:[80,80,80], align:'right'});
+    // Horizontal rule
+    rect(0, 26, W, 0.5, HDR, null);
 
-    // Logo header area (right-aligned logo block)
-    rect(0, 0, W, 35, WHT, null);
-    // Green accent line at top
-    rect(0, 0, W, 2, [30,100,60], null);
-    // Company name right side
-    txt(companyName, W-14, 12, {size:18, bold:true, color:HDR, align:'right'});
-    txt(companyAddr, W-14, 18, {size:8, color:[80,80,80], align:'right'});
-    txt('KINDLE THE LIGHT WITHIN', W-14, 23, {size:7, color:[120,120,120], align:'right'});
-    // Green underline
-    rect(0, 34, W, 0.5, HDR, null);
-
-    // Date (right)
-    txt(today, W-14, 44, {size:9, align:'right', color:[60,60,60]});
+    // Date right, Ref left
+    txt(today, W-14, 36, {size:9, align:'right', color:[60,60,60]});
 
     // Candidate address block (left)
-    let y = 44;
+    let y = 36;
     txt(name, 14, y, {size:9, bold:true});
-    txt(addr1, 14, y+5, {size:9});
-    txt(addr2, 14, y+10, {size:9});
-    if(email) txt('Email: ' + email, 14, y+16, {size:9, bold:true});
+    if(addr1) { txt(addr1, 14, y+5, {size:9}); y+=5; }
+    if(addr2) { txt(addr2, 14, y+5, {size:9}); y+=5; }
+    if(emailV){ txt('Email: '+emailV, 14, y+5, {size:9, bold:true}); }
 
-    y += 28;
-
-    // TITLE
+    y = 60;
+    // Title with lines
     doc.setDrawColor(30,100,60); doc.setLineWidth(0.5);
     doc.line(W/2-35, y, W/2+35, y);
-    txt('Contract Letter', W/2, y+6, {size:13, bold:true, color:BLK, align:'center'});
-    doc.line(W/2-35, y+8, W/2+35, y+8);
-    y += 16;
+    txt('Contract Letter', W/2, y+7, {size:13, bold:true, color:BLK, align:'center'});
+    doc.line(W/2-35, y+9, W/2+35, y+9);
+    y += 18;
 
-    // Greeting
-    txt('Dear ' + name.split(' ').slice(-1)[0] + ',', 14, y, {size:10, bold:true});
-    y += 7;
+    txt('Dear '+name+',', 14, y, {size:10, bold:true}); y+=8;
 
-    // Opening para
     const opening = doc.splitTextToSize(
-      `We are pleased to offer you a Contract as a ${role} in the Department of ${dept} at ${companyName} commencing from ${doj} till ${doe} on the following terms and conditions:`,
-      W-28);
-    txt(opening.join('\n'), 14, y, {size:9.5, color:[30,30,30]});
-    y += opening.length * 5 + 4;
+      'We are pleased to offer you a Contract as a '+role+' in the Department of '+dept+
+      ' at '+companyName+' commencing from '+doj+' till '+doe+
+      ' on the following terms and conditions:', W-28);
+    doc.setFontSize(9.5); doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30);
+    doc.text(opening, 14, y);
+    y += opening.length * 5.2 + 4;
 
-    // Terms
     const terms = [
-      `You will be reporting to the ${mgr}.`,
-      `Your detailed compensation structure is enclosed as Annexure\u2013I with this Contract Letter. Please refer to the annexure for a comprehensive breakup of your salary and benefits.`,
-      `You will be required to work 5 (five) days in a week and mark your attendance on a daily basis.`,
-      `You will be eligible for the leaves as per the University Leave Policy.`,
-      `You will be liable to adhere to the applicable rules and regulations of ${companyName} as notified from time to time.`,
-      `You will keep the information relating to your contract strictly confidential.`,
-      `This contract can be terminated by either party by giving one (1) month of notice in writing by way of an email.`,
-      `This contract can be further renewed on a mutual consent.`,
-      `As a confirmation of your acceptance of this letter, please sign and e-mail the scanned copy of this letter within four (4) calendar days to the undersigned.`,
-      `Your compensation details are strictly confidential and must not be discussed with anyone other than your Reporting Manager & HR.`,
+      'You will be reporting to the '+mgr+'.',
+      'Your detailed compensation structure is enclosed as Annexure-I with this Contract Letter. Please refer to the annexure for a comprehensive breakup of your salary and benefits.',
+      'You will be required to work 5 (five) days in a week and mark your attendance on a daily basis.',
+      'You will be eligible for the leaves as per the University Leave Policy.',
+      'You will be liable to adhere to the applicable rules and regulations of '+companyName+' as notified from time to time.',
+      'You will keep the information relating to your contract strictly confidential.',
+      'This contract can be terminated by either party by giving one (1) month of notice in writing by way of an email.',
+      'This contract can be further renewed on a mutual consent.',
+      'As a confirmation of your acceptance of this letter, please sign and e-mail the scanned copy of this letter within four (4) calendar days to the undersigned.',
+      'Your compensation details are strictly confidential and must not be discussed with anyone other than your Reporting Manager & HR.',
     ];
-    const abc = ['a','b','c','d','e','f','g','h','i','j','k','l','m'];
+    const abc=['a','b','c','d','e','f','g','h','i','j','k'];
     terms.forEach((t,i) => {
       const wrapped = doc.splitTextToSize(t, W-36);
       doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30);
       doc.text(abc[i]+')', 16, y);
       doc.text(wrapped, 23, y);
-      y += wrapped.length * 4.8 + 1.5;
-      if(y > H-50) { doc.addPage(); y=20; }
+      y += wrapped.length * 5 + 1.5;
+      if(y > H-50){ doc.addPage(); rect(0,0,W,H,WHT,null); rect(0,0,W,2.5,[30,100,60],null); y=20; }
     });
 
     y += 4;
     const closing = doc.splitTextToSize(
-      `We look forward to welcoming you in ${companyName} and we hope that this association will be mutually beneficial.`,
-      W-28);
-    txt(closing.join('\n'), 14, y, {size:9.5});
-    y += closing.length*5 + 8;
+      'We look forward to welcoming you in '+companyName+' and we hope that this association will be mutually beneficial.', W-28);
+    doc.setFontSize(9.5); doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30);
+    doc.text(closing, 14, y); y += closing.length*5.2+8;
 
-    txt('Best Wishes,', 14, y, {size:9});
-    txt('For ' + companyName, 14, y+5, {size:9, bold:true});
-    y += 22;
-    // Signature line
-    doc.setDrawColor(...BLK); doc.setLineWidth(0.3);
-    doc.line(14, y, 70, y);
-    y += 4;
-    txt(chro, 14, y, {size:9, bold:true});
-    txt('Group - CHRO', 14, y+5, {size:9});
-    y += 16;
+    txt('Best Wishes,', 14, y, {size:9}); y+=5;
+    txt('For '+companyName, 14, y, {size:9, bold:true}); y+=18;
+    doc.setDrawColor(0); doc.setLineWidth(0.3); doc.line(14, y, 70, y); y+=4;
+    txt(chro, 14, y, {size:9, bold:true}); txt('Group - CHRO', 14, y+5, {size:9}); y+=16;
 
-    rect(14, y, W-28, 0.4, [200,200,200], null);
-    y += 5;
-    txt('I have read and understood the contract and its related terms and conditions and accept it fully.', 14, y, {size:8.5});
-    y += 8;
+    rect(14, y, W-28, 0.4, [200,200,200], null); y+=5;
+    txt('I have read and understood the contract and its related terms and conditions and accept it fully.', 14, y, {size:8.5}); y+=8;
     txt('Name and Signature', 14, y, {size:9});
-    doc.line(14+35, y, 14+75, y);
-    txt('Date', 100, y, {size:9});
-    doc.line(100+12, y, 100+45, y);
-    txt('Location', 160, y, {size:9});
-    doc.line(160+16, y, W-14, y);
+    doc.line(14+36, y, 14+76, y);
+    txt('Date', 100, y, {size:9}); doc.line(112, y, 148, y);
+    txt('Location', 158, y, {size:9}); doc.line(170, y, W-14, y);
 
-    // ── Page 2: Annexure-I (Compensation Plan) ──
+    // ── Page 2: Annexure-I ──
     doc.addPage();
     rect(0, 0, W, H, WHT, null);
-    rect(0, 0, W, 2, [30,100,60], null);
-    txt(companyName, W-14, 12, {size:16, bold:true, color:HDR, align:'right'});
+    rect(0, 0, W, 2.5, [30,100,60], null);
+    txt(companyName, W-14, 13, {size:14, bold:true, color:HDR, align:'right'});
     rect(0, 26, W, 0.5, HDR, null);
 
     y = 36;
+    doc.setDrawColor(30,100,60); doc.setLineWidth(0.5);
     doc.line(W/2-30, y, W/2+30, y);
-    txt('Annexure - I', W/2, y+6, {size:13, bold:true, align:'center'});
-    doc.line(W/2-30, y+8, W/2+30, y+8);
+    txt('Annexure - I', W/2, y+7, {size:13, bold:true, align:'center'});
+    doc.line(W/2-30, y+9, W/2+30, y+9);
     y += 18;
 
-    // Compensation Plan header
-    rect(14, y, W-28, 9, HDR, GRY);
-    txt('Compensation Plan', W/2, y+6, {size:11, bold:true, color:WHT, align:'center'});
+    // Compensation Plan table header
+    rect(14, y, W-28, 9, HDR, [180,180,180], 0.3);
+    txt('Compensation Plan', W/2, y+6.2, {size:11, bold:true, color:WHT, align:'center'});
     y += 9;
 
-    const infoRows = [['Name', name],['Department', dept],['Designation', role],['Contract Period', doj + ' to ' + doe]];
-    infoRows.forEach(([l,v],i) => {
-      rect(14, y, 65, 8, i%2===0?LGRY:WHT, GRY);
-      rect(79, y, W-14-79, 8, i%2===0?LGRY:WHT, GRY);
+    [['Name',name],['Department',dept],['Designation',role],['Contract Period',doj+' to '+doe]].forEach(([l,v],i)=>{
+      const bg = i%2===0 ? LGRY : WHT;
+      rect(14, y, 65, 8, bg, [180,180,180], 0.25);
+      rect(79, y, W-14-79, 8, bg, [180,180,180], 0.25);
       txt(l, 16, y+5.5, {size:9, bold:true});
       txt(v, 81, y+5.5, {size:9});
       y+=8;
     });
-    y+=4;
+    y+=5;
 
-    // Monthly components header
-    rect(14, y, W-28, 8, [150,200,175], GRY);
-    txt('Monthly Components (in \u20B9)', W/2, y+5.5, {size:9, bold:true, align:'center'});
+    // Monthly components
+    rect(14, y, W-28, 8, [150,200,175], [180,180,180], 0.3);
+    txt('Monthly Components (in Rs.)', W/2, y+5.5, {size:9, bold:true, align:'center'});
     y+=8;
 
-    const basic2 = parseInt(ctcM * 0.42);
-    const da2    = parseInt(ctcM * 0.38);
-    const hra2   = parseInt(ctcM * 0.042);
-    const spl2   = parseInt(ctcM * 0.154);
-    const pf2    = 1800;
-
-    const compRows = [
-      ['Basic Salary', basic2],
-      ['DA', da2],
-      ['HRA', hra2],
-      ['Special Allowance', spl2],
-      ['Employee Contribution to Provident Fund', pf2],
+    const basic2  = Math.round(ctcM * 0.42);
+    const da2     = Math.round(ctcM * 0.38);
+    const hra2    = Math.round(ctcM * 0.042);
+    const spl2    = Math.round(ctcM * 0.154);
+    const pf2     = 1800;
+    const compRows=[
+      ['Basic Salary', basic2],['DA', da2],['HRA', hra2],
+      ['Special Allowance', spl2],['Employee Contribution to Provident Fund', pf2],
     ];
-    compRows.forEach(([l,v],i) => {
-      rect(14, y, W-28-40, 8, i%2===0?LGRY:WHT, GRY);
-      rect(14+W-28-40, y, 40, 8, i%2===0?LGRY:WHT, GRY);
+    const numColW = 40;
+    compRows.forEach(([l,v],i)=>{
+      const bg = i%2===0 ? LGRY : WHT;
+      rect(14, y, W-28-numColW, 8, bg, [180,180,180], 0.25);
+      rect(14+W-28-numColW, y, numColW, 8, bg, [180,180,180], 0.25);
       txt(l, 16, y+5.5, {size:9});
-      txt(inr(v), 14+W-28-38, y+5.5, {size:9, align:'right'});
+      txt(inr(v), 14+W-28-3, y+5.5, {size:9, align:'right'});
       y+=8;
     });
-    // Total row
-    rect(14, y, W-28-40, 9, [30,100,60], GRY);
-    rect(14+W-28-40, y, 40, 9, [30,100,60], GRY);
+    // Total CTC row
+    rect(14, y, W-28-numColW, 9, [30,100,60], [180,180,180], 0.25);
+    rect(14+W-28-numColW, y, numColW, 9, [30,100,60], [180,180,180], 0.25);
     txt('Total CTU \u2013 Per Month', 16, y+6, {size:9, bold:true, color:WHT});
-    txt(inr(ctcM), 14+W-28-38, y+6, {size:9, bold:true, color:WHT, align:'right'});
+    txt(inr(ctcM), 14+W-28-3, y+6, {size:9, bold:true, color:WHT, align:'right'});
     y+=11;
 
-    // Insurance section
-    rect(14, y, W-28, 8, [150,200,175], GRY);
+    // Insurance
+    rect(14, y, W-28, 8, [150,200,175], [180,180,180], 0.3);
     txt('Insurance & Medical Benefits', W/2, y+5.5, {size:9, bold:true, align:'center'});
     y+=8;
-    rect(14, y, W-28-60, 14, WHT, GRY);
-    rect(14+W-28-60, y, 60, 14, WHT, GRY);
-    txt('Hospitalization Expense Reimbursement Limit\n(for self, spouse & 2 dependent children)', 16, y+5, {size:8});
-    txt('As per University\nInsurance policy.', 14+W-28-58, y+5, {size:8});
+    const insColW = 60;
+    rect(14, y, W-28-insColW, 14, WHT, [180,180,180], 0.25);
+    rect(14+W-28-insColW, y, insColW, 14, WHT, [180,180,180], 0.25);
+    const insLines = doc.splitTextToSize('Hospitalization Expense Reimbursement Limit (for self, spouse & 2 dependent children)', W-28-insColW-4);
+    doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(0);
+    doc.text(insLines, 16, y+5);
+    txt('As per University\nInsurance policy.', 14+W-28-insColW+2, y+5, {size:8});
     y+=14;
-    rect(14, y, W-28-60, 8, LGRY, GRY);
-    rect(14+W-28-60, y, 60, 8, LGRY, GRY);
+    rect(14, y, W-28-insColW, 8, LGRY, [180,180,180], 0.25);
+    rect(14+W-28-insColW, y, insColW, 8, LGRY, [180,180,180], 0.25);
     txt('Additionally Group Personal Accident (for self)', 16, y+5.5, {size:8});
-    y+=10;
+    y+=12;
 
     // Notes
     txt('Notes:', 14, y, {size:9, bold:true}); y+=5;
     ['This compensation plan is governed by '+companyName+'.',
      'This annexure is strictly confidential and must not be discussed with anyone other than your Reporting Manager & HR.',
      'Any personal tax liability arising out of compensation will be borne solely by you.'
-    ].forEach((n,i)=>{ txt((i+1)+') '+n, 16, y, {size:8.5, bold:i===1}); y+=6; });
-
+    ].forEach((n,i)=>{
+      const wn = doc.splitTextToSize((i+1)+') '+n, W-32);
+      doc.setFontSize(8.5); doc.setFont('helvetica', i===1?'bold':'normal'); doc.setTextColor(0);
+      doc.text(wn, 16, y); y += wn.length*5+1.5;
+    });
     y+=10;
-    doc.line(14, y, 70, y); doc.line(W-70, y, W-14, y);
-    y+=5;
-    txt('Signature:', 14, y, {size:9}); txt('Signature:', W-70, y, {size:9});
-    y+=5;
+
+    doc.setDrawColor(0); doc.setLineWidth(0.3);
+    doc.line(14, y, 70, y); doc.line(W-70, y, W-14, y); y+=5;
+    txt('Signature:', 14, y, {size:9}); txt('Signature:', W-70, y, {size:9}); y+=5;
     txt(chro, 14, y, {size:9, bold:true}); txt(name, W-70, y, {size:9, bold:true});
     txt('Group - CHRO', 14, y+5, {size:8});
 
     // Footer
     rect(0, H-18, W, 18, [245,245,245], null);
     rect(0, H-18, W, 0.4, [200,200,200], null);
-    txt('Campus: ' + companyAddr, W/2, H-12, {size:7, color:[100,100,100], align:'center'});
-    txt('www.smarthr.com', W/2, H-7, {size:7, color:[30,100,60], align:'center'});
+    txt('Campus: '+companyAddr, W/2, H-11, {size:7, color:[100,100,100], align:'center'});
+    txt('www.smarthr.com', W/2, H-6, {size:7, color:[30,100,60], align:'center'});
 
-    doc.save('Contract_Letter_' + name.replace(/ /g,'_') + '.pdf');
+    doc.save('Contract_Letter_'+name.replace(/ /g,'_')+'.pdf');
 
   // ════════════════════════════════════════════════════════════════
   //  APPOINTMENT LETTER — formal white style
   // ════════════════════════════════════════════════════════════════
   } else if (type === 'appointment') {
-    const name  = document.getElementById('appt-name')?.value  || 'Employee Name';
-    const desg  = document.getElementById('appt-desg')?.value  || 'Software Engineer';
-    const dept  = document.getElementById('appt-dept')?.value  || 'Engineering';
-    const doj   = document.getElementById('appt-doj')?.value   || '01-Jan-2026';
-    const eid   = document.getElementById('appt-id')?.value    || 'EMP-0001';
-    const ctc   = parseInt(document.getElementById('appt-ctc')?.value || '1200000');
-    const companyName = document.getElementById('pdf-company')?.value || 'SmartHR Technologies';
-    const companyAddr = document.getElementById('pdf-addr')?.value   || 'Hyderabad, Telangana';
+    const name  = document.getElementById('appt-name')?.value  || 'Arvapalli Harikrishna';
+    const desg  = document.getElementById('appt-desg')?.value  || 'Technical Trainer';
+    const dept  = document.getElementById('appt-dept')?.value  || 'Computer Scence & Engineering';
+    const doj   = document.getElementById('appt-doj')?.value   || '2026-06-11';
+    const eid   = document.getElementById('appt-id')?.value    || '60000124';
+    const ctc   = parseInt(document.getElementById('appt-ctc')?.value || '666660');
+    const companyName = document.getElementById('pdf-company')?.value || 'Innovative Spirits Pvt. Ltd.';
+    const companyAddr = document.getElementById('pdf-addr')?.value   || 'Hyderabad, Telangana 500081';
     const today = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
 
     rect(0, 0, W, H, WHT, null);
-    rect(0, 0, W, 2, [30,100,60], null);
-    txt(companyName, W-14, 12, {size:16, bold:true, color:HDR, align:'right'});
-    txt(companyAddr, W-14, 18, {size:8, color:[80,80,80], align:'right'});
-    rect(0, 27, W, 0.5, HDR, null);
+    rect(0, 0, W, 2.5, [30,100,60], null);
+    txt(companyName, W-14, 13, {size:15, bold:true, color:HDR, align:'right'});
+    txt(companyAddr, W-14, 19, {size:8, color:[80,80,80], align:'right'});
+    rect(0, 26, W, 0.5, HDR, null);
 
-    let y = 38;
+    let y = 36;
+    txt('Ref: '+eid, 14, y, {size:9});
     txt(today, W-14, y, {size:9, align:'right', color:[60,60,60]});
-    txt('Ref: ' + eid, 14, y, {size:9});
+    y += 14;
 
-    y += 12;
-    doc.line(W/2-40, y, W/2+40, y);
-    txt('APPOINTMENT LETTER', W/2, y+6, {size:13, bold:true, align:'center'});
-    doc.line(W/2-40, y+8, W/2+40, y+8);
+    // Title
+    doc.setDrawColor(30,100,60); doc.setLineWidth(0.5);
+    doc.line(W/2-42, y, W/2+42, y);
+    txt('APPOINTMENT LETTER', W/2, y+7, {size:13, bold:true, color:BLK, align:'center'});
+    doc.line(W/2-42, y+9, W/2+42, y+9);
     y += 18;
 
-    txt('Dear ' + name + ',', 14, y, {size:10, bold:true}); y+=8;
-    const apptPara = `This is to confirm your appointment as ${desg} in the ${dept} Department of ${companyName} with effect from ${doj}, on the following terms and conditions:`;
-    const apptLines = doc.splitTextToSize(apptPara, W-28);
-    txt(apptLines.join('\n'), 14, y, {size:9.5}); y += apptLines.length*5+6;
+    txt('Dear '+name+',', 14, y, {size:10, bold:true}); y+=8;
 
-    // Details table
+    const apptPara = 'This is to confirm your appointment as '+desg+' in the '+
+      dept+' Department of '+companyName+' with effect from '+doj+
+      ', on the following terms and conditions:';
+    const apptLines = doc.splitTextToSize(apptPara, W-28);
+    doc.setFontSize(9.5); doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30);
+    doc.text(apptLines, 14, y); y += apptLines.length*5.2+6;
+
+    // Details table — label col 70mm, value col rest
     const dtRows = [
       ['Employee ID', eid], ['Designation', desg], ['Department', dept],
-      ['Date of Joining', doj], ['Annual CTC', '\u20B9 ' + inr(ctc)], ['Probation Period', '6 months'],
-      ['Reporting To', 'Head of Department']
+      ['Date of Joining', doj], ['Annual CTC', 'Rs. '+inr(ctc)],
+      ['Probation Period', '6 months'], ['Reporting To', 'Head of Department']
     ];
     dtRows.forEach(([l,v],i) => {
-      rect(14, y, 70, 8, i%2===0?LGRY:WHT, GRY);
-      rect(84, y, W-98, 8, i%2===0?LGRY:WHT, GRY);
-      txt(l, 16, y+5.5, {size:9, bold:true}); txt(v, 86, y+5.5, {size:9}); y+=8;
+      const bg = i%2===0 ? LGRY : WHT;
+      rect(14, y, 70, 8, bg, [180,180,180], 0.25);
+      rect(84, y, W-98, 8, bg, [180,180,180], 0.25);
+      txt(l, 16, y+5.5, {size:9, bold:true});
+      txt(v, 86, y+5.5, {size:9});
+      y+=8;
     });
     y+=8;
 
     const clauses = [
       'You will be on probation for a period of 6 months from your date of joining. Your services can be regularized after successful completion of probation.',
       'During the probation period, either party may terminate the contract with one month notice.',
-      'You will be governed by the HR policies and code of conduct of ' + companyName + ' in force from time to time.',
+      'You will be governed by the HR policies and code of conduct of '+companyName+' in force from time to time.',
       'Your compensation details are strictly confidential and must not be disclosed to anyone.',
       'This letter is issued subject to the submission of all required documents before or on date of joining.'
     ];
     clauses.forEach((cl,i) => {
       const w = doc.splitTextToSize(cl, W-36);
-      txt((i+1)+'.', 16, y, {size:9}); 
-      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(...BLK);
+      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(0);
+      doc.text((i+1)+'.', 16, y);
       doc.text(w, 23, y);
-      y += w.length*4.8+3;
+      y += w.length*5+3;
     });
 
     y+=6;
     txt('Please sign and return a copy of this letter as your acceptance.', 14, y, {size:9}); y+=8;
-    txt('We welcome you to the ' + companyName + ' family!', 14, y, {size:9.5, bold:true}); y+=10;
-    txt('For ' + companyName, 14, y, {size:9, bold:true}); y+=18;
-    doc.line(14, y, 70, y);
-    y+=4;
+    txt('We welcome you to the '+companyName+' family!', 14, y, {size:9.5, bold:true}); y+=10;
+    txt('For '+companyName, 14, y, {size:9, bold:true}); y+=18;
+    doc.setDrawColor(0); doc.setLineWidth(0.3); doc.line(14, y, 70, y); y+=4;
     txt('Authorised Signatory', 14, y, {size:9, bold:true});
     txt('HR Department', 14, y+5, {size:9});
 
-    y+=20; rect(14, y, W-28, 0.4, [200,200,200], null); y+=5;
+    y+=20;
+    rect(14, y, W-28, 0.4, [200,200,200], null); y+=5;
     txt('I accept the terms of appointment.', 14, y, {size:8.5}); y+=8;
-    txt('Name & Signature:', 14, y, {size:9}); doc.line(46, y, 110, y);
-    txt('Date:', 120, y, {size:9}); doc.line(130, y, 160, y);
+    txt('Name & Signature:', 14, y, {size:9}); doc.line(50, y, 110, y);
+    txt('Date:', 120, y, {size:9}); doc.line(131, y, 162, y);
 
     rect(0, H-18, W, 18, [245,245,245], null);
     rect(0, H-18, W, 0.4, [200,200,200], null);
-    txt('Campus: ' + companyAddr, W/2, H-10, {size:7, color:[100,100,100], align:'center'});
+    txt('Campus: '+companyAddr, W/2, H-11, {size:7, color:[100,100,100], align:'center'});
+    txt('www.smarthr.com', W/2, H-6, {size:7, color:[30,100,60], align:'center'});
 
-    doc.save('Appointment_Letter_' + name.replace(/ /g,'_') + '.pdf');
+    doc.save('Appointment_Letter_'+name.replace(/ /g,'_')+'.pdf');
   }
 
   showToast('PDF generated and downloaded!', 'success');

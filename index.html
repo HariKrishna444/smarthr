@@ -67,15 +67,36 @@
     }
   });
 
-  // Load employees from Firestore (falls back to local data)
+  // Load employees from Firestore (replaces demo data entirely)
   async function loadFirestoreEmployees() {
     try {
       const snap = await getDocs(collection(db, 'employees'));
       if (!snap.empty) {
         window.empData = snap.docs.map(d => ({...d.data(), _id: d.id}));
         renderEmp(window.empData);
+        // Also try to load payroll/doc data from Firestore
+        loadFirestorePayroll();
+        loadFirestoreDocuments();
       }
-    } catch(e) { /* use local data */ }
+    } catch(e) { console.warn('Firestore load error:', e); }
+  }
+
+  async function loadFirestorePayroll() {
+    try {
+      const snap = await getDocs(collection(db, 'payroll'));
+      if (!snap.empty) {
+        window.payrollData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      }
+    } catch(e) {}
+  }
+
+  async function loadFirestoreDocuments() {
+    try {
+      const snap = await getDocs(collection(db, 'documents'));
+      if (!snap.empty) {
+        window.docVaultData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      }
+    } catch(e) {}
   }
 
   // Firebase Auth handlers
@@ -88,6 +109,43 @@
   window.firestoreAddEmployee = (data) => addDoc(collection(db, 'employees'), {...data, createdAt: serverTimestamp()});
   window.firestoreUpdateEmployee = (id, data) => updateDoc(doc(db, 'employees', id), data);
   window.firestoreDeleteEmployee = (id) => deleteDoc(doc(db, 'employees', id));
+  window.firestoreAddLeave = (data) => addDoc(collection(db, 'leaves'), {...data, createdAt: serverTimestamp()});
+  window.firestoreUpdateLeave = (id, data) => updateDoc(doc(db, 'leaves', id), data);
+  window.firestoreAddDocument = (data) => addDoc(collection(db, 'documents'), {...data, createdAt: serverTimestamp()});
+  window.firestoreAddPayroll = (data) => addDoc(collection(db, 'payroll'), {...data, createdAt: serverTimestamp()});
+
+  // Pre-fill document generator forms from Firestore employee data
+  window.prefillDocFormsFromEmployee = (emp) => {
+    if (!emp) return;
+    // Payslip
+    const nameEl = document.getElementById('pdf-emp-name');
+    if (nameEl) nameEl.value = emp.n || emp.name || '';
+    const idEl = document.getElementById('pdf-emp-id');
+    if (idEl) idEl.value = emp.id || emp.empId || '';
+    const desgEl = document.getElementById('pdf-desg');
+    if (desgEl) desgEl.value = emp.desg || emp.designation || '';
+    const deptEl = document.getElementById('pdf-dept');
+    if (deptEl) deptEl.value = emp.d || emp.department || '';
+    // Salary components if stored in Firestore
+    if (emp.basic) { const el=document.getElementById('pdf-basic'); if(el) el.value=emp.basic; }
+    if (emp.da) { const el=document.getElementById('pdf-da'); if(el) el.value=emp.da; }
+    if (emp.hra) { const el=document.getElementById('pdf-hra'); if(el) el.value=emp.hra; }
+    if (emp.special) { const el=document.getElementById('pdf-special'); if(el) el.value=emp.special; }
+    if (emp.pf) { const el=document.getElementById('pdf-pf'); if(el) el.value=emp.pf; }
+    if (emp.bankName) { const el=document.getElementById('pdf-bankname'); if(el) el.value=emp.bankName; }
+    if (emp.bankAcc) { const el=document.getElementById('pdf-bank'); if(el) el.value=emp.bankAcc; }
+    if (emp.ifsc) { const el=document.getElementById('pdf-ifsc'); if(el) el.value=emp.ifsc; }
+    if (emp.pan) { const el=document.getElementById('pdf-pan'); if(el) el.value=emp.pan; }
+    // Appointment form
+    const apptName = document.getElementById('appt-name'); if(apptName) apptName.value = emp.n||emp.name||'';
+    const apptDesg = document.getElementById('appt-desg'); if(apptDesg) apptDesg.value = emp.desg||emp.designation||'';
+    const apptDept = document.getElementById('appt-dept'); if(apptDept) apptDept.value = emp.d||emp.department||'';
+    const apptId   = document.getElementById('appt-id');   if(apptId)   apptId.value   = emp.id||emp.empId||'';
+    // Offer form
+    const offName = document.getElementById('offer-name'); if(offName) offName.value = emp.n||emp.name||'';
+    const offRole = document.getElementById('offer-role'); if(offRole) offRole.value = emp.desg||emp.designation||'';
+    const offDept = document.getElementById('offer-dept'); if(offDept) offDept.value = emp.d||emp.department||'';
+  };
 </script>
 
 <!-- jsPDF for PDF generation – loaded on demand to avoid tracking-prevention blocks -->
@@ -546,6 +604,20 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
 /* ===== AI PERFORMANCE REVIEW ===== */
 .ai-review-out { background: rgba(29,158,117,0.08); border: 1px solid rgba(29,158,117,0.2); border-radius: 10px; padding: 16px; font-size: 13px; line-height: 1.65; color: var(--text-dim); margin-top: 16px; display: none; }
 </style>
+
+<!-- showToast MUST be defined before any other script runs -->
+<script>
+let toastTimer;
+function showToast(msg, type='info') {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  document.getElementById('toast-msg').textContent = msg;
+  toast.className = 'toast ' + type + ' show';
+  document.getElementById('toast-icon').textContent = type==='success'?'✓':type==='error'?'✕':'ℹ';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3500);
+}
+</script>
 </head>
 <body>
 
@@ -997,6 +1069,21 @@ input:checked + .toggle-slider::before { transform: translateX(22px); }
           <div class="form-row">
             <div class="form-group"><label class="form-label">Company / University Name</label><input class="form-input" id="pdf-company" value="SmartHR Technologies Pvt. Ltd." /></div>
             <div class="form-group"><label class="form-label">Address / Campus</label><input class="form-input" id="pdf-addr" value="Hyderabad, Telangana 500081" /></div>
+          </div>
+        </div>
+        <!-- ── Firestore Employee Lookup ── -->
+        <div style="background:rgba(55,138,221,0.06);border:1px solid rgba(55,138,221,0.15);border-radius:10px;padding:14px;margin-bottom:14px">
+          <div style="font-size:11px;font-weight:600;color:var(--blue);letter-spacing:0.8px;text-transform:uppercase;margin-bottom:10px">🔗 Load Employee from Firestore</div>
+          <div class="form-row" style="align-items:flex-end">
+            <div class="form-group" style="flex:1">
+              <label class="form-label">Select Employee</label>
+              <select class="form-select" id="doc-emp-select" onchange="prefillDocFromSelect()">
+                <option value="">— Manual entry —</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:0">
+              <button class="btn-secondary" style="margin-top:0;white-space:nowrap" onclick="refreshDocEmpList()">↻ Refresh</button>
+            </div>
           </div>
         </div>
 
@@ -1668,7 +1755,7 @@ function demoLogin(email) {
   const _pav = document.getElementById('portal-avatar'); if(_pav)_pav.textContent=_ini;
   document.getElementById('sidebar-user-name').textContent = name;
   document.getElementById('portal-user-name').textContent = name;
-  showToast('Welcome to SmartHR! (Demo mode)', 'success');
+  showToast('Welcome to SmartHR!', 'success');
 }
 
 async function handleRegister() {
@@ -1800,6 +1887,8 @@ function renderEmp(data) {
       </td>
     </tr>`).join('');
   document.getElementById('emp-count-badge').textContent = data.length + ' total';
+  // Keep document form selector in sync
+  if (typeof refreshDocEmpList === 'function') refreshDocEmpList();
 }
 renderEmp(window.empData);
 
@@ -1902,18 +1991,35 @@ renderLeave();
 function actLeave(i, action) {
   leaveData[i].s = action;
   renderLeave();
+  // Persist to Firestore if record has _id
+  const rec = leaveData[i];
+  if (rec._id && window._firebaseFn && window._firebaseDB) {
+    const { doc: fsDoc, updateDoc } = window._firebaseFn;
+    updateDoc(fsDoc(window._firebaseDB, 'leaves', rec._id), {status: action}).catch(()=>{});
+  }
   showToast(`Leave ${action} for ${leaveData[i].e}`, action==='approved'?'success':'info');
   sendNotification(leaveData[i].e, `Your leave request has been ${action}.`);
 }
 
 function openLeaveModal() { document.getElementById('leave-modal').classList.add('open'); }
-function submitLeave() {
+async function submitLeave() {
   const type = document.getElementById('lv-type').value;
   const from = document.getElementById('lv-from').value;
   const to = document.getElementById('lv-to').value;
   const reason = document.getElementById('lv-reason').value;
   if (!from || !reason) { showToast('Please fill all required fields','error'); return; }
-  leaveData.push({e:'You', t:type, f:from, to:to||from, d:1, r:reason, s:'pending'});
+  const newLeave = {e:'You', t:type, f:from, to:to||from, d:1, r:reason, s:'pending'};
+  leaveData.push(newLeave);
+  // Save to Firestore
+  if (window.firestoreAddLeave) {
+    try {
+      const ref = await window.firestoreAddLeave({
+        employee: window._currentUser?.displayName || window._currentUser?.email || 'You',
+        type, from, to: to||from, reason, status: 'pending'
+      });
+      newLeave._id = ref.id;
+    } catch(e) {}
+  }
   renderLeave();
   closeModal('leave-modal');
   showToast('Leave request submitted!', 'success');
@@ -2247,21 +2353,24 @@ async function generatePDF(type) {
     const info3 = [
       ['IFSC No', ifsc||'—'], ['UAN No', ''], ['PAN No', pan||'—'], ['ESI No', '']
     ];
+    // Column widths: page=210mm, margins=14 each side → usable=182mm split into 3 cols
+    // Col1: 14..73 (59mm), Col2: 73..136 (63mm), Col3: 136..196 (60mm)
     const iH = 6.5, iX = 14;
+    const col1L=iX, col1V=iX+26, col2L=iX+62, col2V=iX+88, col3L=iX+122, col3V=iX+143;
     info.forEach(([l,v],i) => {
-      txt(l, iX+1.5, y+3+i*iH, {size:8, bold:true});
-      txt(': '+v, iX+28, y+3+i*iH, {size:8});
+      txt(l, col1L+1.5, y+3+i*iH, {size:7.5, bold:true});
+      txt(': '+v, col1V, y+3+i*iH, {size:7.5});
     });
     info2.forEach(([l,v],i) => {
-      txt(l, iX+68, y+3+i*iH, {size:8, bold:true});
-      txt(': '+v, iX+92, y+3+i*iH, {size:8});
+      txt(l, col2L, y+3+i*iH, {size:7.5, bold:true});
+      txt(': '+v, col2V, y+3+i*iH, {size:7.5});
     });
     info3.forEach(([l,v],i) => {
-      txt(l, iX+130, y+3+i*iH, {size:8, bold:true});
-      txt(': '+v, iX+150, y+3+i*iH, {size:8});
+      txt(l, col3L, y+3+i*iH, {size:7.5, bold:true});
+      txt(': '+v, col3V, y+3+i*iH, {size:7.5});
     });
-    vline(iX+66, y, y+30, 0.2, GRY);
-    vline(iX+128, y, y+30, 0.2, GRY);
+    vline(iX+60, y, y+30, 0.2, GRY);
+    vline(iX+120, y, y+30, 0.2, GRY);
     y += 32;
 
     // ── TAKE HOME BOX ──
@@ -2271,30 +2380,41 @@ async function generatePDF(type) {
     y += 12;
 
     // ── EARNINGS TABLE HEADER ──
+    // Table layout: 182mm usable width split into 6 logical cols
+    // [Desc|Gross|Earn.Desc|Earn.Amt|Arr.Desc|Arr.Amt] | [Ded.Desc|Ded.Amt]
+    // Left half (earnings): cols A-D; Right half (deductions): cols E-F
     const LX=14, RX=W-14, TW=RX-LX;
-    const c1=14, c2=62, c3=90, c4=120, c5=150; // col x positions
-    const cW1=48, cW2=28, cW3=30, cW4=30, cW5=32; // widths
+    // Col x-positions (absolute mm)
+    const c1=14;   // Earnings Description (width 44)
+    const c2=58;   // Gross Amount (width 22)
+    const c3=80;   // Earnings Amount col (width 22)
+    const c4=102;  // Arrears Description (width 22)
+    const c5=124;  // Arrears Amount (width 14)
+    const c6=138;  // Deductions Description (width 44)
+    const c7=182;  // Deductions Amount (right edge, width 14)
+    const cW_ded = TW-(c6-LX); // width of deduction section
     const tHdr=8;
 
     // header row
-    rect(LX, y, TW, tHdr, [60,100,80], GRY);
-    txt('Description', c1+2, y+5.5, {size:8, bold:true, color:WHT});
-    txt('Gross', c2+2, y+5.5, {size:8, bold:true, color:WHT});
-    txt('Earnings', c3+2, y+5.5, {size:8, bold:true, color:WHT});
-    // Arrears merged header
-    rect(c4, y, cW4+cW5, tHdr, [60,100,80], null);
-    txt('Arrears', c4+18, y+5.5, {size:8, bold:true, color:WHT});
-    rect(c4+cW4+cW5, y, TW-(c4-LX)-cW4-cW5, tHdr, [80,60,60], null);
-    txt('Deductions', c4+cW4+cW5+4, y+5.5, {size:8, bold:true, color:WHT});
+    rect(LX, y, c6-LX, tHdr, [60,100,80], null);
+    txt('Description', c1+2, y+5.5, {size:7.5, bold:true, color:WHT});
+    txt('Gross', c2+2, y+5.5, {size:7.5, bold:true, color:WHT});
+    txt('Earnings', c3+2, y+5.5, {size:7.5, bold:true, color:WHT});
+    txt('Arrears', c4+2, y+5.5, {size:7.5, bold:true, color:WHT});
+    rect(c6, y, cW_ded, tHdr, [80,60,60], null);
+    txt('Deductions', c6+4, y+5.5, {size:7.5, bold:true, color:WHT});
+    // vertical dividers in header
+    doc.setDrawColor(...GRY); doc.setLineWidth(0.2);
+    [c2,c3,c4,c5,c6].forEach(x => doc.line(x,y,x,y+tHdr));
     // Sub-header
     y += tHdr;
     rect(LX, y, TW, tHdr-2, [200,220,210], GRY);
-    txt('Description', c1+2, y+4.5, {size:7.5, bold:true});
-    txt('Amount', c2+2, y+4.5, {size:7.5, bold:true});
-    txt('Description', c3+2, y+4.5, {size:7.5, bold:true});
-    txt('Amount', c4+2, y+4.5, {size:7.5, bold:true});
-    txt('Description', c4+cW4+cW5+2, y+4.5, {size:7.5, bold:true});
-    txt('Amount', c4+cW4+cW5+cW5+2, y+4.5, {size:7.5, bold:true});
+    txt('Description', c1+2, y+4.5, {size:7, bold:true});
+    txt('Amount', c2+2, y+4.5, {size:7, bold:true});
+    txt('Description', c3+2, y+4.5, {size:7, bold:true});
+    txt('Amount', c4+2, y+4.5, {size:7, bold:true});
+    txt('Description', c6+2, y+4.5, {size:7, bold:true});
+    txt('Amount', c7-12, y+4.5, {size:7, bold:true});
     y += tHdr-2;
 
     // Draw vertical dividers for table
@@ -2316,27 +2436,35 @@ async function generatePDF(type) {
       const ry = y + i*tRowH;
       if(i%2===1) rect(LX, ry, TW, tRowH, LGRY, null);
       rect(LX, ry, TW, tRowH, null, GRY, 0.15);
-      txt(desc, c1+2, ry+4.8, {size:8});
-      txt(inr(gross), c2+2, ry+4.8, {size:8});
-      txt(inr(gross), c3+2, ry+4.8, {size:8});
-      txt(arr, c4+2, ry+4.8, {size:8});
+      // clip description to column width
+      const descLines = doc.splitTextToSize(desc, c2-c1-3);
+      txt(descLines[0], c1+2, ry+4.8, {size:7.5});
+      txt(inr(gross), c2+2, ry+4.8, {size:7.5});
+      txt(inr(gross), c3+2, ry+4.8, {size:7.5});
+      txt(arr, c4+2, ry+4.8, {size:7.5});
+      // vertical dividers
+      doc.setDrawColor(...GRY); doc.setLineWidth(0.15);
+      [c2,c3,c4,c5,c6].forEach(x => doc.line(x,ry,x,ry+tRowH));
     });
     dedRows.forEach(([desc, amt], i) => {
       const ry = y + i*tRowH;
-      txt(desc, c4+cW4+cW5+2, ry+4.8, {size:8});
-      txt(inr(amt), c4+cW4+cW5+cW5+2, ry+4.8, {size:8});
+      const dedDesc = doc.splitTextToSize(desc, c7-c6-3);
+      txt(dedDesc[0], c6+2, ry+4.8, {size:7.5});
+      txt(inr(amt), c7-2, ry+4.8, {size:7.5, align:'right'});
     });
 
     y += maxRows * tRowH;
     // Totals row
     rect(LX, y, TW, tRowH+1, [200,220,210], GRY);
-    txt('Total Earnings', c1+2, y+5.5, {size:8, bold:true});
-    txt(inr(totalEarnings), c2+2, y+5.5, {size:8, bold:true});
-    txt(inr(totalEarnings), c3+2, y+5.5, {size:8, bold:true});
-    txt('Total Arrears', c4+2, y+5.5, {size:8});
-    txt('0.00', c4+cW4+2, y+5.5, {size:8});
-    txt('Total deductions', c4+cW4+cW5+2, y+5.5, {size:8, bold:true});
-    txt(inr(totalDeductions), c4+cW4+cW5+cW5+2, y+5.5, {size:8, bold:true});
+    txt('Total Earnings', c1+2, y+5.5, {size:7.5, bold:true});
+    txt(inr(totalEarnings), c2+2, y+5.5, {size:7.5, bold:true});
+    txt(inr(totalEarnings), c3+2, y+5.5, {size:7.5, bold:true});
+    txt('Total Arrears', c4+2, y+5.5, {size:7.5});
+    txt('0.00', c5+2, y+5.5, {size:7.5});
+    txt('Total deductions', c6+2, y+5.5, {size:7.5, bold:true});
+    txt(inr(totalDeductions), c7-2, y+5.5, {size:7.5, bold:true, align:'right'});
+    doc.setDrawColor(...GRY); doc.setLineWidth(0.2);
+    [c2,c3,c4,c5,c6].forEach(x => doc.line(x,y,x,y+tRowH+1));
     y += tRowH+1;
 
     // Net pay row
@@ -2348,7 +2476,8 @@ async function generatePDF(type) {
 
     // ── BOTTOM SECTION ── (3-col: Arrears | Working Details | Form 16)
     const botY = y, botH = 55;
-    const b1X=LX, b1W=40, b2X=LX+40, b2W=60, b3X=LX+100, b3W=TW-100;
+    // b1: Arrears (35mm), b2: Working Details (55mm), b3: Form 16 (rest ~92mm)
+    const b1X=LX, b1W=35, b2X=LX+35, b2W=55, b3X=LX+90, b3W=TW-90;
 
     // Arrears section
     rect(b1X, botY, b1W, botH, null, GRY);
@@ -2386,8 +2515,9 @@ async function generatePDF(type) {
     ];
     f16Rows.forEach(([l,v],i) => {
       if(l==='Total Income') doc.setFont('helvetica','bold');
-      txt(l, b3X+2, botY+12+i*4.8, {size:7});
-      txt(v, b3X+b3W-2, botY+12+i*4.8, {size:7, bold:l==='Total Income', align:'right'});
+      const f16Label = doc.splitTextToSize(l, b3W-20);
+      txt(f16Label[0], b3X+2, botY+12+i*4.8, {size:6.5});
+      txt(v, b3X+b3W-2, botY+12+i*4.8, {size:6.5, bold:l==='Total Income', align:'right'});
     });
 
     y = botY + botH + 5;
@@ -2722,6 +2852,31 @@ function numberToWords(n) {
 
 
 // ===========================
+// DOCUMENT FORM - EMPLOYEE SELECTOR
+// ===========================
+function refreshDocEmpList() {
+  const sel = document.getElementById('doc-emp-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Manual entry —</option>';
+  (window.empData || []).forEach((emp, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${emp.n || emp.name || ''} (${emp.id || emp.empId || ''}) — ${emp.d || emp.department || ''}`;
+    sel.appendChild(opt);
+  });
+  showToast('Employee list refreshed from Firestore', 'info');
+}
+
+function prefillDocFromSelect() {
+  const sel = document.getElementById('doc-emp-select');
+  if (!sel || sel.value === '') return;
+  const emp = (window.empData || [])[parseInt(sel.value)];
+  if (!emp) return;
+  if (window.prefillDocFormsFromEmployee) window.prefillDocFormsFromEmployee(emp);
+  showToast(`Loaded ${emp.n || emp.name || 'employee'}'s data`, 'success');
+}
+
+// ===========================
 // CALENDAR
 // ===========================
 let calYear = new Date().getFullYear();
@@ -2882,19 +3037,5 @@ function showQR() {
 }
 </script>
 
-<script>
-// ===========================
-// TOAST
-// ===========================
-let toastTimer;
-function showToast(msg, type='info') {
-  const toast = document.getElementById('toast');
-  document.getElementById('toast-msg').textContent = msg;
-  toast.className = `toast ${type} show`;
-  document.getElementById('toast-icon').textContent = type==='success'?'✓':type==='error'?'✕':'ℹ';
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3500);
-}
-</script>
 </body>
 </html>

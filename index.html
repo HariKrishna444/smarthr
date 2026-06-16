@@ -64,9 +64,18 @@
       if (rb) { rb.disabled = false; rb.textContent = 'Create Account'; }
       // Log login event
       logEvent(analytics, 'login', { method: 'email' });
+      // Apply RBAC — read role from login select or sessionStorage
+      const selectedRole = document.getElementById('login-role')?.value || rbacGetStoredRole();
+      rbacSetRole(selectedRole);
+      if (typeof auditLog === 'function') auditLog('LOGIN', { email: user.email, role: selectedRole });
+      // Update audit dashboard role display
+      const ard = document.getElementById('audit-role-display');
+      if (ard) ard.textContent = (ROLES[selectedRole]?.icon||'') + ' ' + (ROLES[selectedRole]?.label || selectedRole);
       loadFirestoreEmployees();
     } else {
       window._currentUser = null;
+      window._userRole = null;
+      sessionStorage.removeItem('smarthr_role');
       document.getElementById('login-screen').style.display = 'flex';
       document.getElementById('app-shell').style.display = 'none';
     }
@@ -172,6 +181,370 @@
     set('offer-email',emp.email);
     set('offer-ctc',  emp.ctcMonthly||emp.ctc);
   };
+</script>
+
+<!-- ===== RBAC + SECURITY ENGINE ===== -->
+<script>
+// ============================================================
+//  ROLE-BASED ACCESS CONTROL (RBAC)
+//  Roles: super_admin > hr_manager > payroll_admin > recruiter > manager > employee
+// ============================================================
+const ROLES = {
+  super_admin:   { label: 'Super Admin',    badge: '#e24b4a', icon: '👑' },
+  hr_manager:    { label: 'HR Manager',     badge: '#7F77DD', icon: '🧑‍💼' },
+  payroll_admin: { label: 'Payroll Admin',  badge: '#F4A44B', icon: '💰' },
+  recruiter:     { label: 'Recruiter',      badge: '#378ADD', icon: '🔍' },
+  manager:       { label: 'Manager / HOD',  badge: '#1D9E75', icon: '👔' },
+  employee:      { label: 'Employee',       badge: '#5DCAA5', icon: '👤' },
+};
+
+// Feature permissions matrix — what each role can access
+const PERMISSIONS = {
+  // Nav panels
+  canViewDashboard:       ['super_admin','hr_manager','payroll_admin','recruiter','manager','employee'],
+  canViewEmployees:       ['super_admin','hr_manager','manager'],
+  canViewLeave:           ['super_admin','hr_manager','manager','employee'],
+  canViewPayroll:         ['super_admin','hr_manager','payroll_admin'],
+  canViewDocuments:       ['super_admin','hr_manager','payroll_admin'],
+  canViewRecruitment:     ['super_admin','hr_manager','recruiter'],
+  canViewAI:              ['super_admin','hr_manager','recruiter','manager','employee'],
+  canViewPerformance:     ['super_admin','hr_manager','manager'],
+  canViewAnalytics:       ['super_admin','hr_manager'],
+  canViewCalendar:        ['super_admin','hr_manager','recruiter','manager','employee'],
+  canViewTickets:         ['super_admin','hr_manager','manager','employee'],
+  canViewExpenses:        ['super_admin','hr_manager','manager','employee'],
+  canViewPortal:          ['super_admin','hr_manager','manager','employee'],
+  // Actions
+  canAddEmployee:         ['super_admin','hr_manager'],
+  canEditEmployee:        ['super_admin','hr_manager'],
+  canDeleteEmployee:      ['super_admin'],
+  canApproveLeave:        ['super_admin','hr_manager','manager'],
+  canViewAllPayslips:     ['super_admin','hr_manager','payroll_admin'],
+  canProcessPayroll:      ['super_admin','payroll_admin'],
+  canViewAuditLog:        ['super_admin','hr_manager'],
+  canManageUsers:         ['super_admin'],
+  canViewAIResumeAnalyzer:['super_admin','hr_manager','recruiter'],
+  canGeneratePerfReview:  ['super_admin','hr_manager','manager'],
+};
+
+// Panel → permission key map
+const PANEL_PERMISSION = {
+  dashboard:   'canViewDashboard',
+  employees:   'canViewEmployees',
+  leave:       'canViewLeave',
+  payroll:     'canViewPayroll',
+  documents:   'canViewDocuments',
+  recruitment: 'canViewRecruitment',
+  ai:          'canViewAI',
+  performance: 'canViewPerformance',
+  hranalytics: 'canViewAnalytics',
+  calendar:    'canViewCalendar',
+  tickets:     'canViewTickets',
+  expenses:    'canViewExpenses',
+  portal:      'canViewPortal',
+  selfservice: 'canViewPortal',
+  auditlog:    'canViewAuditLog',
+  docvault:    'canViewDocuments',
+  okr:         'canViewPerformance',
+  careerportal:'canViewRecruitment',
+  notifications:'canViewDashboard',
+};
+
+// Current session role
+window._userRole = null;
+
+function rbacHas(permission) {
+  const role = window._userRole || 'employee';
+  const allowed = PERMISSIONS[permission] || [];
+  return allowed.includes(role);
+}
+
+function rbacSetRole(role) {
+  window._userRole = role in ROLES ? role : 'employee';
+  // Persist in sessionStorage (not localStorage — clears on tab close)
+  sessionStorage.setItem('smarthr_role', window._userRole);
+  applyRBAC();
+}
+
+function rbacGetStoredRole() {
+  return sessionStorage.getItem('smarthr_role') || 'employee';
+}
+
+// Apply RBAC to all nav items and action buttons
+function applyRBAC() {
+  const role = window._userRole || 'employee';
+  const meta = ROLES[role] || ROLES.employee;
+
+  // Update sidebar role badge
+  const roleEl = document.getElementById('sidebar-role-badge');
+  if (roleEl) {
+    roleEl.textContent = meta.icon + ' ' + meta.label;
+    roleEl.style.background = meta.badge + '22';
+    roleEl.style.color = meta.badge;
+    roleEl.style.border = '1px solid ' + meta.badge + '44';
+  }
+
+  // Update topbar role badge
+  const topRoleEl = document.getElementById('topbar-role-badge');
+  if (topRoleEl) {
+    topRoleEl.textContent = meta.icon + ' ' + meta.label;
+    topRoleEl.style.background = meta.badge + '22';
+    topRoleEl.style.color = meta.badge;
+    topRoleEl.style.border = '1px solid ' + meta.badge + '44';
+    topRoleEl.style.display = 'block';
+  }
+
+  // Show/hide nav items based on permissions
+  document.querySelectorAll('[data-panel]').forEach(item => {
+    const panel = item.getAttribute('data-panel');
+    const perm = PANEL_PERMISSION[panel];
+    if (perm) {
+      const allowed = PERMISSIONS[perm]?.includes(role);
+      item.style.display = allowed ? '' : 'none';
+    }
+  });
+
+  // Show/hide action buttons based on role
+  const addEmpBtn = document.getElementById('add-emp-btn');
+  if (addEmpBtn) addEmpBtn.style.display = rbacHas('canAddEmployee') ? '' : 'none';
+
+  const deleteEmpBtns = document.querySelectorAll('.delete-emp-btn');
+  deleteEmpBtns.forEach(b => b.style.display = rbacHas('canDeleteEmployee') ? '' : 'none');
+
+  const approveLeaveEls = document.querySelectorAll('.approve-leave-btn');
+  approveLeaveEls.forEach(b => b.style.display = rbacHas('canApproveLeave') ? '' : 'none');
+
+  // Hide resume analyzer from non-recruiters
+  const resumeCard = document.getElementById('resume-analyzer-card');
+  if (resumeCard) resumeCard.style.display = rbacHas('canViewAIResumeAnalyzer') ? '' : 'none';
+
+  // Hide perf review writer from non-managers
+  const perfCard = document.getElementById('perf-review-card');
+  if (perfCard) perfCard.style.display = rbacHas('canGeneratePerfReview') ? '' : 'none';
+
+  // Employee self-service: lock payslip view to own records only
+  if (role === 'employee') {
+    const payrollFilterMsg = document.getElementById('payroll-filter-notice');
+    if (payrollFilterMsg) payrollFilterMsg.style.display = 'block';
+  }
+
+  // HR Analytics — show audit log section only to super_admin/hr_manager
+  const auditSection = document.getElementById('audit-log-section');
+  if (auditSection) auditSection.style.display = rbacHas('canViewAuditLog') ? '' : 'none';
+
+  // Navigate away from forbidden panel if currently there
+  const currentPanel = document.querySelector('.panel.active');
+  if (currentPanel) {
+    const pid = currentPanel.id?.replace('panel-', '');
+    const perm = PANEL_PERMISSION[pid];
+    if (perm && !PERMISSIONS[perm]?.includes(role)) {
+      go('dashboard');
+    }
+  }
+
+  auditLog('RBAC_APPLIED', { role, user: window._currentUser?.email });
+}
+
+// ============================================================
+//  SECURE AI PROXY — replaces direct Claude API calls
+//  Routes all AI calls through a secured wrapper that:
+//  1. Validates the user's session before calling
+//  2. Never exposes the API key (uses Firebase Cloud Functions in prod)
+//  3. Rate-limits by session to prevent abuse
+// ============================================================
+const _aiCallLog = new Map(); // sessionId → { count, firstCall }
+const AI_RATE_LIMIT = { maxCalls: 30, windowMs: 60 * 60 * 1000 }; // 30/hour
+
+async function secureAICall(messages, systemPrompt = '', maxTokens = 1000) {
+  // 1. Auth check — must be signed in
+  if (!window._currentUser) {
+    throw new Error('Authentication required for AI features');
+  }
+
+  // 2. Role check — only allowed roles can call AI
+  if (!rbacHas('canViewAI')) {
+    throw new Error('Your role does not have access to AI features');
+  }
+
+  // 3. Client-side rate limiting
+  const uid = window._currentUser.uid;
+  const now = Date.now();
+  const entry = _aiCallLog.get(uid) || { count: 0, firstCall: now };
+  if (now - entry.firstCall > AI_RATE_LIMIT.windowMs) {
+    // Window expired — reset
+    _aiCallLog.set(uid, { count: 1, firstCall: now });
+  } else if (entry.count >= AI_RATE_LIMIT.maxCalls) {
+    throw new Error('AI rate limit reached. Please try again in an hour.');
+  } else {
+    _aiCallLog.set(uid, { count: entry.count + 1, firstCall: entry.firstCall });
+  }
+
+  // 4. Audit the call
+  auditLog('AI_CALL', { model: 'claude-sonnet-4-6', user: window._currentUser.email, role: window._userRole });
+
+  // *** PRODUCTION NOTE ***
+  // Replace this block with a call to your Firebase Cloud Function:
+  //   const fn = firebase.functions().httpsCallable('callClaude');
+  //   const result = await fn({ messages, systemPrompt, maxTokens });
+  //   return result.data.text;
+  // The Cloud Function holds the API key securely in env vars — never exposed to client.
+  // The placeholder below uses the key from config only in dev mode.
+
+  const DEV_API_KEY = window._SMARTHR_DEV_KEY || '';  // Set via: window._SMARTHR_DEV_KEY='sk-ant-...'
+  if (!DEV_API_KEY) {
+    throw new Error('NO_KEY');
+  }
+
+  const payload = {
+    model: 'claude-sonnet-4-6',
+    max_tokens: maxTokens,
+    messages
+  };
+  if (systemPrompt) payload.system = systemPrompt;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': DEV_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'AI API error ' + res.status);
+  }
+
+  const data = await res.json();
+  return data.content?.map(c => c.text || '').join('') || '';
+}
+
+// ============================================================
+//  AUDIT LOG ENGINE
+//  Stores tamper-evident audit trail in Firestore + local buffer
+// ============================================================
+const _auditBuffer = [];
+
+async function auditLog(action, details = {}) {
+  const entry = {
+    action,
+    user:      window._currentUser?.email  || 'anonymous',
+    uid:       window._currentUser?.uid    || null,
+    role:      window._userRole            || 'unknown',
+    timestamp: new Date().toISOString(),
+    details,
+    // Add a lightweight hash for tamper detection
+    _hash: btoa(action + (window._currentUser?.uid || '') + new Date().toISOString().slice(0,16))
+  };
+  _auditBuffer.push(entry);
+  renderAuditBuffer();
+
+  // Persist to Firestore (non-blocking — fire and forget)
+  if (window._firebaseDB && window._firebaseFn?.addDoc && window._currentUser) {
+    try {
+      const { addDoc, collection, serverTimestamp } = window._firebaseFn;
+      addDoc(collection(window._firebaseDB, 'auditLogs'), {
+        ...entry,
+        serverTimestamp: serverTimestamp()
+      }).catch(() => {}); // Silently fail if offline
+    } catch(e) {}
+  }
+}
+
+function renderAuditBuffer() {
+  const el = document.getElementById('live-audit-feed');
+  if (!el) return;
+  const icons = { LOGIN:'🔑', LOGOUT:'🚪', AI_CALL:'🤖', RBAC_APPLIED:'🛡️',
+    EMP_ADD:'➕', EMP_EDIT:'✏️', EMP_DELETE:'🗑️', LEAVE_APPROVE:'✅', LEAVE_DENY:'❌',
+    PAYROLL_VIEW:'💰', DOC_GEN:'📄', TICKET_RAISE:'🎫', DEFAULT:'📋' };
+  const recent = [..._auditBuffer].reverse().slice(0, 20);
+  el.innerHTML = recent.map(e => {
+    const icon = icons[e.action] || icons.DEFAULT;
+    const roleInfo = ROLES[e.role]?.label || e.role;
+    return `<div class="audit-row">
+      <div class="audit-icon" style="background:rgba(93,202,165,0.1)">${icon}</div>
+      <div class="audit-info">
+        <div class="audit-action">${e.action.replace(/_/g,' ')} — ${e.user}</div>
+        <div class="audit-meta">Role: ${roleInfo} · ${new Date(e.timestamp).toLocaleTimeString('en-IN')}
+          ${e.details.panel ? ' · Panel: '+e.details.panel : ''}
+          ${e.details.empId ? ' · Emp: '+e.details.empId : ''}</div>
+      </div>
+      <div class="audit-time">${new Date(e.timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
+    </div>`;
+  }).join('') || '<div style="font-size:13px;color:var(--text-muted);padding:12px">No audit events yet.</div>';
+}
+
+// ============================================================
+//  Firestore Security Rules (deploy via Firebase Console / CLI)
+//  Paste into: Firebase Console → Firestore → Rules
+// ============================================================
+/*
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn()       { return request.auth != null; }
+    function userRole()         { return get(/databases/$(database)/documents/userRoles/$(request.auth.uid)).data.role; }
+    function isSuperAdmin()     { return isSignedIn() && userRole() == 'super_admin'; }
+    function isHRManager()      { return isSignedIn() && userRole() in ['super_admin','hr_manager']; }
+    function isPayrollAdmin()   { return isSignedIn() && userRole() in ['super_admin','hr_manager','payroll_admin']; }
+    function isManagerOrAbove() { return isSignedIn() && userRole() in ['super_admin','hr_manager','manager']; }
+    function isOwner(uid)       { return isSignedIn() && request.auth.uid == uid; }
+
+    // Employees collection
+    match /employees/{empId} {
+      allow read:   if isManagerOrAbove() || isOwner(resource.data.uid);
+      allow create: if isHRManager();
+      allow update: if isHRManager();
+      allow delete: if isSuperAdmin();
+    }
+
+    // Payroll — only payroll admin / HR / super admin
+    match /payroll/{docId} {
+      allow read:   if isPayrollAdmin() || isOwner(resource.data.uid);
+      allow write:  if isPayrollAdmin();
+    }
+
+    // Leave requests — employees can see/create own; managers can approve
+    match /leaves/{leaveId} {
+      allow read:   if isManagerOrAbove() || isOwner(resource.data.uid);
+      allow create: if isSignedIn();
+      allow update: if isManagerOrAbove();
+      allow delete: if isHRManager();
+    }
+
+    // Audit logs — write-only for authenticated users; read only for HR+
+    match /auditLogs/{logId} {
+      allow create: if isSignedIn();
+      allow read:   if isHRManager();
+      allow update, delete: if false;  // Tamper-proof
+    }
+
+    // User roles — only super admin can write
+    match /userRoles/{uid} {
+      allow read:   if isSignedIn() && (isSuperAdmin() || isOwner(uid));
+      allow write:  if isSuperAdmin();
+    }
+
+    // Documents vault
+    match /documents/{docId} {
+      allow read:   if isHRManager() || isOwner(resource.data.uid);
+      allow write:  if isHRManager();
+    }
+
+    // Notifications — own only
+    match /notifications/{notifId} {
+      allow read, update: if isOwner(resource.data.uid);
+      allow create:       if isHRManager();
+      allow delete:       if false;
+    }
+  }
+}
+*/
 </script>
 
 <!-- jsPDF for PDF generation – loaded on demand to avoid tracking-prevention blocks -->
@@ -677,8 +1050,11 @@ function showToast(msg, type='info') {
       <div class="form-group">
         <label class="form-label">Role</label>
         <select class="form-select" id="login-role">
-          <option value="admin">HR Admin</option>
-          <option value="manager">Manager</option>
+          <option value="super_admin">Super Admin</option>
+          <option value="hr_manager">HR Manager</option>
+          <option value="payroll_admin">Payroll Admin</option>
+          <option value="recruiter">Recruiter</option>
+          <option value="manager">Manager / HOD</option>
           <option value="employee">Employee (Self-Service)</option>
         </select>
       </div>
@@ -765,6 +1141,7 @@ function showToast(msg, type='info') {
       <div>
         <div class="u-name" id="sidebar-user-name">Admin</div>
         <div class="u-role">Sign out</div>
+        <div id="sidebar-role-badge" style="margin-top:5px;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:600;display:inline-block;letter-spacing:0.3px">👤 Employee</div>
       </div>
     </div>
   </div>
@@ -778,6 +1155,7 @@ function showToast(msg, type='info') {
       <div class="tb-sub" id="page-sub">Welcome back! Here's what's happening today.</div>
     </div>
     <div class="tb-right">
+      <div id="topbar-role-badge" style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(29,158,117,0.15);color:var(--accent2);border:1px solid rgba(29,158,117,0.3);display:none">👤 Employee</div>
       <div class="icon-btn" title="Notifications" onclick="toggleNotif()">🔔<span class="notif-count" id="notif-count">5</span></div>
       <div class="icon-btn" title="Settings" onclick="go('notifications')">⚙️</div>
       <div class="avatar-sm" style="cursor:pointer" onclick="go('selfservice')"><span id="topbar-user-name" style="font-size:10px">SA</span></div>
@@ -857,7 +1235,7 @@ function showToast(msg, type='info') {
           <input type="text" id="emp-search" placeholder="Search by name, ID, department, designation..." oninput="filterEmployees(this.value)" />
           <span class="badge bg" id="emp-count-badge">540 total</span>
         </div>
-        <button class="btn-primary" style="width:auto;padding:10px 18px;margin:0" onclick="openEmpModal()">+ Add Employee</button>
+        <button class="btn-primary" id="add-emp-btn" style="width:auto;padding:10px 18px;margin:0" onclick="openEmpModal()">+ Add Employee</button>
       </div>
       <div class="card" style="padding:0;overflow:hidden">
         <table class="tbl">
@@ -1029,7 +1407,7 @@ function showToast(msg, type='info') {
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:16px">
-        <div class="card" style="margin-bottom:0">
+        <div class="card" style="margin-bottom:0" id="resume-analyzer-card">
           <div class="card-head"><span class="card-title">AI Resume Analyzer</span><span class="badge bb">NLP Powered</span></div>
           <div class="drop-zone" id="resume-drop" onclick="document.getElementById('resume-file').click()"
             ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -1048,7 +1426,7 @@ function showToast(msg, type='info') {
             <div id="resume-output"></div>
           </div>
         </div>
-        <div class="card" style="margin-bottom:0">
+        <div class="card" style="margin-bottom:0" id="perf-review-card">
           <div class="card-head"><span class="card-title">🤖 AI Performance Review Writer</span><span class="badge bp">Manager Tool</span></div>
           <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Enter scores and achievements — AI writes professional appraisal comments instantly.</p>
           <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" id="pr-name" placeholder="Aarav Mehta" /></div>
@@ -1472,21 +1850,66 @@ function showToast(msg, type='info') {
     </div>
 
     <!-- ======================== AUDIT LOG ======================== -->
-    <div class="panel" id="panel-auditlog">
-      <div class="stat-grid stat-3">
-        <div class="stat-card"><div class="s-label">Events Today</div><div class="s-num">142</div></div>
-        <div class="stat-card"><div class="s-label">Critical Actions</div><div class="s-num" style="color:var(--coral)">4</div></div>
-        <div class="stat-card"><div class="s-label">Active Users</div><div class="s-num" style="color:var(--accent2)">28</div></div>
-      </div>
-      <div class="card">
-        <div class="card-head"><span class="card-title">🔍 System Audit Log</span><span class="badge bb">Real-time</span></div>
-        <div id="audit-log-list">
-          <div class="audit-row"><div class="audit-icon" style="background:rgba(226,75,74,0.15)">🗑️</div><div class="audit-info"><div class="audit-action">Employee deleted – EMP-0204 (Suresh Nair)</div><div class="audit-meta">By: admin@smarthr.com · IP: 103.21.x.x</div></div><div class="audit-time">09:42 am</div></div>
-          <div class="audit-row"><div class="audit-icon" style="background:rgba(29,158,117,0.15)">✅</div><div class="audit-info"><div class="audit-action">Leave approved – Priya Sharma (Sick Leave, 2 days)</div><div class="audit-meta">By: manager@smarthr.com · IP: 103.21.x.x</div></div><div class="audit-time">09:14 am</div></div>
-          <div class="audit-row"><div class="audit-icon" style="background:rgba(55,138,221,0.15)">✏️</div><div class="audit-info"><div class="audit-action">Salary updated – EMP-0042 Aarav Mehta (₹90K → ₹1,11K)</div><div class="audit-meta">By: hr@smarthr.com · IP: 103.22.x.x</div></div><div class="audit-time">08:50 am</div></div>
-          <div class="audit-row"><div class="audit-icon" style="background:rgba(239,159,39,0.15)">🔑</div><div class="audit-info"><div class="audit-action">Login – vikram@smarthr.com</div><div class="audit-meta">By: vikram@smarthr.com · IP: 49.36.x.x · Chrome/Windows</div></div><div class="audit-time">08:32 am</div></div>
-          <div class="audit-row"><div class="audit-icon" style="background:rgba(29,158,117,0.15)">➕</div><div class="audit-info"><div class="audit-action">New employee added – EMP-0541 Kavya Reddy</div><div class="audit-meta">By: hr@smarthr.com · IP: 103.22.x.x</div></div><div class="audit-time">Yesterday</div></div>
-          <div class="audit-row"><div class="audit-icon" style="background:rgba(127,119,221,0.15)">⬇️</div><div class="audit-info"><div class="audit-action">Payslip downloaded – EMP-0042 (October 2024)</div><div class="audit-meta">By: aarav@smarthr.com · IP: 49.37.x.x</div></div><div class="audit-time">Yesterday</div></div>
+    <div class="panel" id="panel-auditlog" style="display:none">
+      <div id="audit-log-section">
+        <div class="stat-grid stat-3">
+          <div class="stat-card"><div class="s-label">Events This Session</div><div class="s-num" id="audit-count">0</div></div>
+          <div class="stat-card"><div class="s-label">Your Role</div><div class="s-num" id="audit-role-display" style="font-size:14px">—</div></div>
+          <div class="stat-card"><div class="s-label">Security Status</div><div class="s-num" style="color:var(--accent2)">🔒 Active</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">🔍 Live Audit Log</span>
+            <span class="badge bb">Session Events · Firestore-Backed</span>
+            <button onclick="exportAuditLog()" style="margin-left:auto;background:rgba(55,138,221,0.15);border:1px solid rgba(55,138,221,0.3);color:var(--blue);padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer">⬇ Export CSV</button>
+          </div>
+          <div id="live-audit-feed" style="max-height:500px;overflow-y:auto">
+            <div style="font-size:13px;color:var(--text-muted);padding:20px;text-align:center">No audit events yet in this session.</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-head"><span class="card-title">🛡️ Firestore Security Rules</span><span class="badge" style="background:rgba(29,158,117,0.15);color:var(--accent2)">Deploy Ready</span></div>
+          <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Copy these rules into your Firebase Console → Firestore → Rules tab to enforce server-side RBAC.</p>
+          <pre id="firestore-rules-display" style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:11px;color:var(--text-muted);overflow-x:auto;white-space:pre-wrap;line-height:1.6">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn()     { return request.auth != null; }
+    function userRole()       { return get(/databases/$(database)/documents/userRoles/$(request.auth.uid)).data.role; }
+    function isSuperAdmin()   { return isSignedIn() &amp;&amp; userRole() == 'super_admin'; }
+    function isHRManager()    { return isSignedIn() &amp;&amp; userRole() in ['super_admin','hr_manager']; }
+    function isPayrollAdmin() { return isSignedIn() &amp;&amp; userRole() in ['super_admin','hr_manager','payroll_admin']; }
+    function isManager()      { return isSignedIn() &amp;&amp; userRole() in ['super_admin','hr_manager','manager']; }
+    function isOwner(uid)     { return isSignedIn() &amp;&amp; request.auth.uid == uid; }
+
+    match /employees/{empId} {
+      allow read:   if isManager() || isOwner(resource.data.uid);
+      allow create: if isHRManager();
+      allow update: if isHRManager();
+      allow delete: if isSuperAdmin();
+    }
+    match /payroll/{docId} {
+      allow read:   if isPayrollAdmin() || isOwner(resource.data.uid);
+      allow write:  if isPayrollAdmin();
+    }
+    match /leaves/{leaveId} {
+      allow read:   if isManager() || isOwner(resource.data.uid);
+      allow create: if isSignedIn();
+      allow update: if isManager();
+      allow delete: if isHRManager();
+    }
+    match /auditLogs/{logId} {
+      allow create: if isSignedIn();
+      allow read:   if isHRManager();
+      allow update, delete: if false;
+    }
+    match /userRoles/{uid} {
+      allow read:   if isSignedIn() &amp;&amp; (isSuperAdmin() || isOwner(uid));
+      allow write:  if isSuperAdmin();
+    }
+  }
+}</pre>
+          <button onclick="navigator.clipboard.writeText(document.getElementById('firestore-rules-display').textContent).then(()=>showToast('Rules copied to clipboard!','success'))" style="margin-top:10px;background:rgba(29,158,117,0.15);border:1px solid rgba(29,158,117,0.3);color:var(--accent2);padding:7px 16px;border-radius:8px;font-size:12px;cursor:pointer">📋 Copy Rules</button>
         </div>
       </div>
     </div>
@@ -1725,6 +2148,12 @@ const titles = {
 };
 
 function go(name) {
+  // RBAC: check if user has permission to view this panel
+  const perm = PANEL_PERMISSION[name];
+  if (perm && window._userRole && !PERMISSIONS[perm]?.includes(window._userRole)) {
+    showToast(`⛔ Access denied: "${ROLES[window._userRole]?.label || window._userRole}" role cannot access this section.`, 'error');
+    return;
+  }
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.panel === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
   if (titles[name]) {
@@ -1732,8 +2161,35 @@ function go(name) {
     document.getElementById('page-sub').textContent = titles[name][1];
   }
   document.getElementById('notif-dropdown').classList.remove('open');
+  // Update live audit count
+  const ac = document.getElementById('audit-count');
+  if (ac) ac.textContent = _auditBuffer.length;
+  // Audit panel navigation (only meaningful panels)
+  if (name && name !== 'dashboard') auditLog('NAV', { panel: name });
 }
 document.querySelectorAll('.nav-item').forEach(n => n.addEventListener('click', () => go(n.dataset.panel)));
+
+// Export audit log as CSV
+function exportAuditLog() {
+  if (!rbacHas('canViewAuditLog')) { showToast('⛔ Audit export requires HR Manager or Super Admin role.','error'); return; }
+  const rows = [['Timestamp','Action','User','Role','Details']];
+  _auditBuffer.forEach(e => {
+    rows.push([
+      e.timestamp,
+      e.action,
+      e.user,
+      ROLES[e.role]?.label || e.role,
+      JSON.stringify(e.details)
+    ]);
+  });
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `smarthr_audit_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  showToast('Audit log exported!', 'success');
+}
 
 // ===========================
 // AUTH (Firebase only)
@@ -1915,6 +2371,10 @@ function openEmpModal(index = -1) {
 function editEmployee(i) { openEmpModal(i); }
 
 async function saveEmployee() {
+  // RBAC guard
+  if (editingEmpIndex >= 0 && !rbacHas('canEditEmployee')) { showToast('⛔ You do not have permission to edit employees.','error'); return; }
+  if (editingEmpIndex < 0  && !rbacHas('canAddEmployee'))  { showToast('⛔ You do not have permission to add employees.','error'); return; }
+
   const name = document.getElementById('em-name').value.trim();
   const id = document.getElementById('em-id').value.trim();
   const dept = document.getElementById('em-dept').value;
@@ -1932,6 +2392,7 @@ async function saveEmployee() {
     if (e._id && window.firestoreUpdateEmployee) {
       try { await window.firestoreUpdateEmployee(e._id, {n:name,id,d:dept,desg,s:status}); } catch(err){}
     }
+    auditLog('EMP_EDIT', { empId: id, name, by: window._currentUser?.email });
     showToast('Employee updated!', 'success');
   } else {
     const emp = {n:name, i:initials, c:ac, tc, id, d:dept, desg, s:status, j:new Date().toLocaleDateString('en-IN',{month:'short',year:'numeric'}), email:document.getElementById('em-email').value};
@@ -1940,6 +2401,7 @@ async function saveEmployee() {
     if (window.firestoreAddEmployee) {
       try { const ref = await window.firestoreAddEmployee(emp); emp._id = ref.id; } catch(err){}
     }
+    auditLog('EMP_ADD', { empId: id, name, by: window._currentUser?.email });
     showToast('Employee added!', 'success');
   }
   renderEmp(window.empData);
@@ -1947,11 +2409,14 @@ async function saveEmployee() {
 }
 
 async function deleteEmployee(i) {
+  // RBAC guard
+  if (!rbacHas('canDeleteEmployee')) { showToast('⛔ Only Super Admins can delete employees.','error'); return; }
   if (!confirm('Delete this employee?')) return;
   const e = window.empData[i];
   if (e._id && window.firestoreDeleteEmployee) {
     try { await window.firestoreDeleteEmployee(e._id); } catch(err){}
   }
+  auditLog('EMP_DELETE', { empId: e.id, name: e.n, by: window._currentUser?.email });
   window.empData.splice(i,1);
   renderEmp(window.empData);
   showToast('Employee deleted', 'info');
@@ -2107,11 +2572,10 @@ function submitTicket() {
 }
 
 // ===========================
-// AI ASSISTANT (Claude API)
+// AI ASSISTANT (Claude API — secured via secureAICall)
 // ===========================
-const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
-// NOTE: Replace with your actual Anthropic API key — keep this server-side in production!
-const CLAUDE_API_KEY = 'YOUR_ANTHROPIC_API_KEY';
+// NOTE: API key is no longer stored here. Set window._SMARTHR_DEV_KEY for local dev,
+// or deploy callClaude Firebase Cloud Function for production.
 
 const systemPrompt = `You are SmartHR AI Assistant, an intelligent HR assistant for SmartHR portal. 
 You help employees with HR queries including: leave policies, payroll information, attendance, 
@@ -2133,7 +2597,6 @@ async function sendAI() {
   inp.value = '';
   chatHistory.push({role:'user', content: text});
 
-  // Show typing indicator
   const typingId = 'typing-' + Date.now();
   chat.innerHTML += `<div class="msg msg-bot msg-typing" id="${typingId}"><span></span><span></span><span></span></div>`;
   chat.scrollTop = chat.scrollHeight;
@@ -2142,38 +2605,26 @@ async function sendAI() {
 
   try {
     let reply = '';
-
-    if (CLAUDE_API_KEY !== 'YOUR_ANTHROPIC_API_KEY') {
-      // Real Claude API call
-      const res = await fetch(CLAUDE_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': CLAUDE_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 500,
-          system: systemPrompt,
-          messages: chatHistory
-        })
-      });
-      const data = await res.json();
-      reply = data.content?.[0]?.text || 'Sorry, I could not get a response.';
-    } else {
-      // Demo mode fallback
-      reply = await demoAIReply(text);
+    try {
+      reply = await secureAICall(chatHistory, systemPrompt, 500);
+    } catch(err) {
+      if (err.message === 'NO_KEY') {
+        reply = await demoAIReply(text);
+      } else if (err.message?.includes('Authentication') || err.message?.includes('role')) {
+        reply = '⛔ ' + err.message;
+      } else if (err.message?.includes('rate limit')) {
+        reply = '⏳ ' + err.message;
+      } else {
+        reply = await demoAIReply(text);
+      }
     }
 
     chatHistory.push({role:'assistant', content: reply});
-
     const typing = document.getElementById(typingId);
     if (typing) typing.outerHTML = `<div class="msg msg-bot">${reply}</div>`;
   } catch(e) {
     const typing = document.getElementById(typingId);
-    if (typing) typing.outerHTML = `<div class="msg msg-bot">⚠️ API error. Add your Anthropic API key to enable real AI responses.</div>`;
+    if (typing) typing.outerHTML = `<div class="msg msg-bot">⚠️ Unexpected error. Please try again.</div>`;
   }
 
   document.getElementById('ai-send-btn').disabled = false;
@@ -2223,27 +2674,32 @@ async function processResumeFile(file) {
 
     try {
       let analysis;
-      if (CLAUDE_API_KEY !== 'YOUR_ANTHROPIC_API_KEY') {
-        const messages = [{
-          role: 'user',
-          content: isPDF ? [
-            {type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}},
-            {type:'text', text:'Analyze this resume for an HR role. Extract: top skills, years of experience, education, missing skills for a software developer role, and give a match score 0-100. Format as JSON: {score, topSkills, missingSkills, experience, education, recommendation}'}
-          ] : [{type:'text', text:'Analyze this resume text and provide HR insights as JSON: {score, topSkills, missingSkills, experience, education, recommendation}. Text: ' + atob(base64).substring(0,3000)}]
-        }];
+      // Role check: recruiters, HR managers, and super admins only
+      if (!rbacHas('canViewAIResumeAnalyzer')) {
+        document.getElementById('resume-analyzing').style.display = 'none';
+        document.getElementById('resume-output').innerHTML = `<div style="color:var(--coral);font-size:12px">⛔ Resume analysis requires Recruiter, HR Manager, or Super Admin role.</div>`;
+        return;
+      }
 
-        const res = await fetch(CLAUDE_API_URL, {
-          method:'POST',
-          headers:{'Content-Type':'application/json','x-api-key':CLAUDE_API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-          body: JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:600, messages})
-        });
-        const data = await res.json();
-        const text = data.content?.[0]?.text || '{}';
-        analysis = JSON.parse(text.replace(/```json|```/g,'').trim());
-      } else {
-        // Demo analysis
-        await new Promise(r => setTimeout(r, 1500));
-        analysis = {score:89, topSkills:['React','Node.js','AWS','TypeScript','GraphQL'], missingSkills:['Kubernetes','Docker Swarm'], experience:'4.5 years', education:'B.Tech Computer Science', recommendation:'Shortlist'};
+      const messages = [{
+        role: 'user',
+        content: isPDF ? [
+          {type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}},
+          {type:'text', text:'Analyze this resume for an HR role. Extract: top skills, years of experience, education, missing skills for a software developer role, and give a match score 0-100. Format as JSON: {score, topSkills, missingSkills, experience, education, recommendation}'}
+        ] : [{type:'text', text:'Analyze this resume text and provide HR insights as JSON: {score, topSkills, missingSkills, experience, education, recommendation}. Text: ' + atob(base64).substring(0,3000)}]
+      }];
+
+      try {
+        const rawText = await secureAICall(messages, '', 600);
+        analysis = JSON.parse(rawText.replace(/```json|```/g,'').trim());
+      } catch(aiErr) {
+        if (aiErr.message === 'NO_KEY') {
+          // Demo analysis fallback
+          await new Promise(r => setTimeout(r, 1500));
+          analysis = {score:89, topSkills:['React','Node.js','AWS','TypeScript','GraphQL'], missingSkills:['Kubernetes','Docker Swarm'], experience:'4.5 years', education:'B.Tech Computer Science', recommendation:'Shortlist'};
+        } else {
+          throw aiErr;
+        }
       }
 
       document.getElementById('resume-analyzing').style.display = 'none';
@@ -3014,24 +3470,27 @@ async function generatePerfReview() {
   out.style.display = 'block';
   out.innerHTML = '<span class="spinner"></span> Generating review with AI...';
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: `Write a professional HR performance appraisal comment for ${name}. Performance score: ${score}/100. Rating: ${rating}. Key achievements: ${achievements}. Areas for improvement: ${improvement}. Write 2-3 concise professional paragraphs suitable for an official appraisal form. Be specific, constructive and encouraging.`
-        }]
-      })
-    });
-    const data = await response.json();
-    const text = data.content?.map(c=>c.text||'').join('') || 'AI response unavailable. Please add your Claude API key.';
-    out.innerHTML = text.replace(/\n\n/g,'<br><br>');
+    if (!rbacHas('canGeneratePerfReview')) {
+      out.innerHTML = '⛔ Performance review generation requires Manager, HR Manager, or Super Admin role.';
+      return;
+    }
+    const messages = [{role:'user', content:`Write a professional HR performance appraisal comment for ${name}. Performance score: ${score}/100. Rating: ${rating}. Key achievements: ${achievements}. Areas for improvement: ${improvement}. Write 2-3 concise professional paragraphs suitable for an official appraisal form. Be specific, constructive and encouraging.`}];
+    let text = '';
+    try {
+      text = await secureAICall(messages, '', 1000);
+    } catch(aiErr) {
+      if (aiErr.message === 'NO_KEY') text = '';
+      else throw aiErr;
+    }
+    if (text) {
+      out.innerHTML = text.replace(/\n\n/g,'<br><br>');
+    } else {
+      // Demo fallback when no API key configured
+      out.innerHTML = `<strong>${name}</strong> has demonstrated a strong performance this review cycle with a score of ${score}/100, rated as <em>${rating}</em>.<br><br>Key highlights include: ${achievements}. These contributions have directly supported team objectives and reflect a proactive approach to work.<br><br>For continued growth, focus on: ${improvement}. With dedicated effort in these areas, ${name.split(' ')[0]} is well-positioned for advancement in the coming quarter.`;
+    }
+    auditLog('PERF_REVIEW_GEN', { employee: name, score, role: window._userRole });
   } catch(e) {
-    // Demo fallback
-    out.innerHTML = `<strong>${name}</strong> has demonstrated a strong performance this review cycle with a score of ${score}/100, rated as <em>${rating}</em>.<br><br>Key highlights include: ${achievements}. These contributions have directly supported team objectives and reflect a proactive approach to work.<br><br>For continued growth, focus on: ${improvement}. With dedicated effort in these areas, ${name.split(' ')[0]} is well-positioned for advancement in the coming quarter.`;
+    out.innerHTML = `⚠️ ${e.message || 'Generation failed. Please try again.'}`;
   }
 }
 

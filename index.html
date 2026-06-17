@@ -71,6 +71,8 @@
       // Update audit dashboard role display
       const ard = document.getElementById('audit-role-display');
       if (ard) ard.textContent = (ROLES[selectedRole]?.icon||'') + ' ' + (ROLES[selectedRole]?.label || selectedRole);
+      // Attach real-time Firestore listeners
+      if (window.attachFirestoreListeners) window.attachFirestoreListeners();
       loadFirestoreEmployees();
     } else {
       window._currentUser = null;
@@ -81,48 +83,9 @@
     }
   });
 
-  // Load all data from Firestore on login
-  async function loadFirestoreEmployees() {
-    try {
-      const snap = await getDocs(collection(db, 'employees'));
-      if (!snap.empty) {
-        window.empData = snap.docs.map(d => ({...d.data(), _id: d.id}));
-        renderEmp(window.empData);
-        if (typeof refreshDocEmpList === 'function') refreshDocEmpList();
-      }
-    } catch(e) { console.warn('Firestore employees load error:', e); }
-    // Load remaining collections in parallel
-    loadFirestoreLeaves();
-    loadFirestorePayroll();
-    loadFirestoreDocuments();
-  }
-
-  async function loadFirestoreLeaves() {
-    try {
-      const snap = await getDocs(query(collection(db, 'leaves'), orderBy('createdAt', 'desc')));
-      if (!snap.empty) {
-        window.leaveData = snap.docs.map(d => ({...d.data(), _id: d.id}));
-        if (typeof renderLeave === 'function') renderLeave();
-      }
-    } catch(e) {}
-  }
-
-  async function loadFirestorePayroll() {
-    try {
-      const snap = await getDocs(collection(db, 'payroll'));
-      if (!snap.empty) {
-        window.payrollData = snap.docs.map(d => ({...d.data(), _id: d.id}));
-      }
-    } catch(e) {}
-  }
-
-  async function loadFirestoreDocuments() {
-    try {
-      const snap = await getDocs(collection(db, 'documents'));
-      if (!snap.empty) {
-        window.docVaultData = snap.docs.map(d => ({...d.data(), _id: d.id}));
-      }
-    } catch(e) {}
+  // Load all data from Firestore on login using real-time listeners
+  function loadFirestoreEmployees() {
+    window.attachFirestoreListeners();
   }
 
   // Firebase Auth
@@ -142,6 +105,114 @@
   // Firestore CRUD — documents / payroll
   window.firestoreAddDocument = (data) => addDoc(collection(db, 'documents'), {...data, createdAt: serverTimestamp()});
   window.firestoreAddPayroll  = (data) => addDoc(collection(db, 'payroll'),   {...data, createdAt: serverTimestamp()});
+
+  // Firestore CRUD — tickets
+  window.firestoreAddTicket    = (data) => addDoc(collection(db, 'tickets'), {...data, createdAt: serverTimestamp()});
+  window.firestoreUpdateTicket = (id, data) => updateDoc(doc(db, 'tickets', id), {...data, updatedAt: serverTimestamp()});
+
+  // Firestore CRUD — expenses
+  window.firestoreAddExpense    = (data) => addDoc(collection(db, 'expenses'), {...data, createdAt: serverTimestamp()});
+  window.firestoreUpdateExpense = (id, data) => updateDoc(doc(db, 'expenses', id), {...data, updatedAt: serverTimestamp()});
+
+  // Firestore CRUD — noticeboard
+  window.firestoreAddNotice    = (data) => addDoc(collection(db, 'notices'), {...data, createdAt: serverTimestamp()});
+  window.firestoreDeleteNotice = (id) => deleteDoc(doc(db, 'notices', id));
+
+  // Firestore CRUD — recruitment / jobs
+  window.firestoreAddJob    = (data) => addDoc(collection(db, 'jobs'), {...data, createdAt: serverTimestamp()});
+  window.firestoreUpdateJob = (id, data) => updateDoc(doc(db, 'jobs', id), {...data, updatedAt: serverTimestamp()});
+  window.firestoreDeleteJob = (id) => deleteDoc(doc(db, 'jobs', id));
+
+  // Firestore CRUD — OKRs
+  window.firestoreAddOKR    = (data) => addDoc(collection(db, 'okrs'), {...data, createdAt: serverTimestamp()});
+  window.firestoreUpdateOKR = (id, data) => updateDoc(doc(db, 'okrs', id), {...data, updatedAt: serverTimestamp()});
+  window.firestoreDeleteOKR = (id) => deleteDoc(doc(db, 'okrs', id));
+
+  // Firestore CRUD — performance / KPI
+  window.firestoreAddKPI    = (data) => addDoc(collection(db, 'kpi'), {...data, createdAt: serverTimestamp()});
+  window.firestoreUpdateKPI = (id, data) => updateDoc(doc(db, 'kpi', id), {...data, updatedAt: serverTimestamp()});
+
+  // Firestore CRUD — calendar events
+  window.firestoreAddCalEvent    = (data) => addDoc(collection(db, 'calendarEvents'), {...data, createdAt: serverTimestamp()});
+  window.firestoreDeleteCalEvent = (id) => deleteDoc(doc(db, 'calendarEvents', id));
+
+  // Store unsubscribe functions so we can detach on logout
+  let _fsUnsubs = [];
+
+  // Real-time listeners — attach after login, covers ALL data
+  window.attachFirestoreListeners = () => {
+    // Detach any previous listeners
+    _fsUnsubs.forEach(u => u());
+    _fsUnsubs = [];
+
+    // Employees — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'employees'), snap => {
+      window.empData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      renderEmp(window.empData);
+      if (typeof refreshDocEmpList === 'function') refreshDocEmpList();
+      updateDashboard();
+    }));
+    // Leaves — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'leaves'), snap => {
+      window.leaveData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      renderLeaves(window.leaveData);
+      updateLeaveStats(window.leaveData);
+      updateDashboard();
+    }));
+    // Tickets — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'tickets'), snap => {
+      window.ticketData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      renderTickets(window.ticketData);
+      updateTicketStats(window.ticketData);
+      updateDashboard();
+    }));
+    // Expenses — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'expenses'), snap => {
+      window.expenseData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      renderExpenses(window.expenseData);
+      updateExpenseStats(window.expenseData);
+    }));
+    // Notices — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'notices'), snap => {
+      window.noticeData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      renderNoticeBoard(window.noticeData);
+    }));
+    // Jobs — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'jobs'), snap => {
+      window.jobData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      renderRecruitment(window.jobData);
+      renderCareerPortal(window.jobData);
+      updateRecruitmentStats(window.jobData);
+      updateDashboard();
+    }));
+    // OKRs — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'okrs'), snap => {
+      window.okrData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      renderOKRs(window.okrData);
+    }));
+    // KPIs — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'kpi'), snap => {
+      window.kpiData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      renderKPIGrid(window.kpiData);
+      updatePerfStats(window.kpiData);
+    }));
+    // Payroll — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'payroll'), snap => {
+      window.payrollData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      updatePayrollStats(window.payrollData);
+    }));
+    // Calendar events — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'calendarEvents'), snap => {
+      calEvents = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      renderCalendar();
+      renderEventsList();
+    }));
+    // Documents vault — real-time
+    _fsUnsubs.push(onSnapshot(collection(db, 'documents'), snap => {
+      window.docVaultData = snap.docs.map(d => ({...d.data(), _id: d.id}));
+      if (typeof renderDocVault === 'function') renderDocVault(window.docVaultData);
+    }));
+  };
 
   // Firestore CRUD — notifications (stored per user)
   window.firestoreMarkNotifRead = async (notifId) => {
@@ -1168,61 +1239,43 @@ function showToast(msg, type='info') {
       <div class="stat-grid">
         <div class="stat-card" onclick="go('employees')">
           <div class="s-label">Total Employees <span class="s-icon">👥</span></div>
-          <div class="s-num">540</div><div class="s-change up">▲ 12 joined this month</div>
-        </div>
-        <div class="stat-card" onclick="go('attendance')">
-          <div class="s-label">Present Today <span class="s-icon">✅</span></div>
-          <div class="s-num" style="color:var(--accent2)">489</div><div class="s-change nm">90.5% attendance rate</div>
+          <div class="s-num" id="dash-total-emp">—</div><div class="s-change" id="dash-emp-change" style="color:var(--text-muted)">Loading…</div>
         </div>
         <div class="stat-card" onclick="go('leave')">
           <div class="s-label">Leave Requests <span class="s-icon">🌴</span></div>
-          <div class="s-num" style="color:var(--gold)">24</div><div class="s-change" style="color:var(--gold)">7 pending approval</div>
+          <div class="s-num" id="dash-leave-total" style="color:var(--gold)">—</div><div class="s-change" id="dash-leave-pending" style="color:var(--gold)">Loading…</div>
+        </div>
+        <div class="stat-card" onclick="go('tickets')">
+          <div class="s-label">Open Tickets <span class="s-icon">🎫</span></div>
+          <div class="s-num" id="dash-tickets" style="color:var(--coral)">—</div><div class="s-change" style="color:var(--text-muted)" id="dash-tickets-sub">Loading…</div>
         </div>
         <div class="stat-card" onclick="go('recruitment')">
-          <div class="s-label">Open Positions <span class="s-icon">🎯</span></div>
-          <div class="s-num" style="color:var(--blue)">16</div><div class="s-change up">▲ 4 new this week</div>
+          <div class="s-label">Job Openings <span class="s-icon">🎯</span></div>
+          <div class="s-num" id="dash-jobs" style="color:var(--blue)">—</div><div class="s-change" id="dash-jobs-sub" style="color:var(--text-muted)">Loading…</div>
         </div>
       </div>
       <div class="two-col">
         <div class="card">
           <div class="card-head"><span class="card-title">Department Headcount</span><span class="badge bg">Live</span></div>
-          <div class="bar-row"><span class="bar-label">Engineering</span><div class="bar-wrap"><div class="bar-fill" style="width:72%;background:var(--blue)"></div></div><span class="bar-val">128</span></div>
-          <div class="bar-row"><span class="bar-label">Sales</span><div class="bar-wrap"><div class="bar-fill" style="width:55%;background:var(--accent)"></div></div><span class="bar-val">96</span></div>
-          <div class="bar-row"><span class="bar-label">HR & Admin</span><div class="bar-wrap"><div class="bar-fill" style="width:28%;background:var(--purple)"></div></div><span class="bar-val">48</span></div>
-          <div class="bar-row"><span class="bar-label">Marketing</span><div class="bar-wrap"><div class="bar-fill" style="width:38%;background:var(--gold)"></div></div><span class="bar-val">64</span></div>
-          <div class="bar-row"><span class="bar-label">Operations</span><div class="bar-wrap"><div class="bar-fill" style="width:46%;background:var(--coral)"></div></div><span class="bar-val">82</span></div>
-          <div class="bar-row"><span class="bar-label">Finance</span><div class="bar-wrap"><div class="bar-fill" style="width:20%;background:var(--accent2)"></div></div><span class="bar-val">36</span></div>
+          <div id="dash-dept-bars"><div style="font-size:12px;color:var(--text-muted);padding:20px;text-align:center">Add employees to see department breakdown.</div></div>
         </div>
         <div class="card">
-          <div class="card-head"><span class="card-title">Recent Activity</span><span class="badge bb">Today</span></div>
-          <div id="activity-feed">
-            <div class="act-item"><div class="act-dot" style="background:var(--accent2)"></div><div class="act-text">Priya Sharma's leave approved by HOD</div><div class="act-time">9:14 am</div></div>
-            <div class="act-item"><div class="act-dot" style="background:var(--blue)"></div><div class="act-text">New applicant for Sr. Dev – AI score 89%</div><div class="act-time">8:52 am</div></div>
-            <div class="act-item"><div class="act-dot" style="background:var(--gold)"></div><div class="act-text">Rajesh raised salary issue ticket #T-2041</div><div class="act-time">8:31 am</div></div>
-            <div class="act-item"><div class="act-dot" style="background:var(--coral)"></div><div class="act-text">3 resignations submitted this week</div><div class="act-time">Yesterday</div></div>
-            <div class="act-item"><div class="act-dot" style="background:var(--purple)"></div><div class="act-text">Payroll processed for October – ₹54.3L</div><div class="act-time">Yesterday</div></div>
-          </div>
+          <div class="card-head"><span class="card-title">Recent Activity</span><span class="badge bb">Live</span></div>
+          <div id="activity-feed"><div style="font-size:12px;color:var(--text-muted);padding:20px;text-align:center">No activity yet. Actions will appear here.</div></div>
         </div>
       </div>
       <div class="two-col">
         <div class="card">
-          <div class="card-head"><span class="card-title">Hiring Funnel – This Month</span><span class="badge bo">Recruiting</span></div>
-          <div class="funnel-row"><span class="funnel-label">Applied</span><div class="funnel-wrap"><div class="funnel-fill" style="width:100%;background:rgba(55,138,221,0.35);color:#a8d4f5">248</div></div><span class="funnel-count">248</span></div>
-          <div class="funnel-row"><span class="funnel-label">Shortlisted</span><div class="funnel-wrap"><div class="funnel-fill" style="width:63%;background:rgba(127,119,221,0.35);color:#c5c0f5">156</div></div><span class="funnel-count">156</span></div>
-          <div class="funnel-row"><span class="funnel-label">Interview</span><div class="funnel-wrap"><div class="funnel-fill" style="width:38%;background:rgba(239,159,39,0.35);color:#f5c775">94</div></div><span class="funnel-count">94</span></div>
-          <div class="funnel-row"><span class="funnel-label">Selected</span><div class="funnel-wrap"><div class="funnel-fill" style="width:20%;background:rgba(29,158,117,0.4);color:#9FE1CB">48</div></div><span class="funnel-count">48</span></div>
-          <div class="funnel-row"><span class="funnel-label">Joined</span><div class="funnel-wrap"><div class="funnel-fill" style="width:7%;background:rgba(29,158,117,0.6);color:#fff">17</div></div><span class="funnel-count">17</span></div>
+          <div class="card-head"><span class="card-title">Leave Status Breakdown</span><span class="badge bo">This Month</span></div>
+          <div id="dash-leave-bars"><div style="font-size:12px;color:var(--text-muted);padding:20px;text-align:center">No leave data yet.</div></div>
         </div>
         <div class="card">
           <div class="card-head"><span class="card-title">At a Glance</span></div>
-          <div class="pay-row"><span class="pay-label">Attrition Rate</span><span class="pay-val neg" style="cursor:pointer" onclick="go('hranalytics')">5.6% ↗</span></div>
-          <div class="pay-row"><span class="pay-label">Avg Tenure</span><span class="pay-val">3.2 yrs</span></div>
-          <div class="pay-row"><span class="pay-label">Monthly Payroll</span><span class="pay-val">₹54.3L</span></div>
-          <div class="pay-row"><span class="pay-label">Interviews Today</span><span class="pay-val pos">16</span></div>
-          <div class="pay-row"><span class="pay-label">AI Risk Alerts</span><span class="pay-val neg">8 employees</span></div>
-          <div class="pay-row"><span class="pay-label">Avg KPI Score</span><span class="pay-val pos">82 / 100</span></div>
-          <div class="pay-row"><span class="pay-label">Expense Claims</span><span class="pay-val" style="cursor:pointer;color:var(--gold)" onclick="go('expenses')">23 Pending ↗</span></div>
-          <div class="pay-row"><span class="pay-label">OKR Completion</span><span class="pay-val pos" style="cursor:pointer" onclick="go('okr')">67% ↗</span></div>
+          <div class="pay-row"><span class="pay-label">Total Employees</span><span class="pay-val" id="glance-emp">—</span></div>
+          <div class="pay-row"><span class="pay-label">Leave Requests (month)</span><span class="pay-val" id="glance-leaves">—</span></div>
+          <div class="pay-row"><span class="pay-label">Pending Approvals</span><span class="pay-val" id="glance-pending" style="color:var(--gold)">—</span></div>
+          <div class="pay-row"><span class="pay-label">Open Tickets</span><span class="pay-val" id="glance-tickets" style="color:var(--coral)">—</span></div>
+          <div class="pay-row"><span class="pay-label">Expense Claims (pending)</span><span class="pay-val" id="glance-expenses" style="color:var(--gold)">—</span></div>
         </div>
       </div>
     </div>
@@ -1233,7 +1286,7 @@ function showToast(msg, type='info') {
         <div class="search-bar" style="margin-bottom:0;flex:1;margin-right:12px">
           <span>🔍</span>
           <input type="text" id="emp-search" placeholder="Search by name, ID, department, designation..." oninput="filterEmployees(this.value)" />
-          <span class="badge bg" id="emp-count-badge">540 total</span>
+          <span class="badge bg" id="emp-count-badge">0 total</span>
         </div>
         <button class="btn-primary" id="add-emp-btn" style="width:auto;padding:10px 18px;margin:0" onclick="openEmpModal()">+ Add Employee</button>
       </div>
@@ -1248,23 +1301,20 @@ function showToast(msg, type='info') {
     <!-- ======================== ATTENDANCE ======================== -->
     <div class="panel" id="panel-attendance">
       <div class="stat-grid stat-3">
-        <div class="stat-card"><div class="s-label">Present Today</div><div class="s-num" style="color:var(--accent2)">489</div><div class="s-change up">90.5% rate</div></div>
-        <div class="stat-card"><div class="s-label">Absent</div><div class="s-num" style="color:var(--coral)">32</div><div class="s-change dn">▼ 5.9%</div></div>
-        <div class="stat-card"><div class="s-label">On Leave</div><div class="s-num" style="color:var(--gold)">19</div><div class="s-change nm">3.5%</div></div>
+        <div class="stat-card"><div class="s-label">Present Today</div><div class="s-num" id="att-present" style="color:var(--accent2)">—</div><div class="s-change" id="att-present-pct" style="color:var(--text-muted)">From Firestore</div></div>
+        <div class="stat-card"><div class="s-label">Absent</div><div class="s-num" id="att-absent" style="color:var(--coral)">—</div><div class="s-change" style="color:var(--text-muted)">Marked absent</div></div>
+        <div class="stat-card"><div class="s-label">On Leave</div><div class="s-num" id="att-on-leave" style="color:var(--gold)">—</div><div class="s-change" style="color:var(--text-muted)">Approved leaves today</div></div>
       </div>
       <div class="two-col">
         <div class="card">
-          <div class="card-head"><span class="card-title">Monthly Attendance Trend</span><span class="badge bg">November 2024</span></div>
+          <div class="card-head"><span class="card-title">Monthly Attendance Trend</span><span class="badge bg" id="att-month-badge">Current Month</span></div>
           <div class="trend-chart" id="att-chart"></div>
           <div class="tc-labels"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30</span></div>
+          <div id="att-chart-empty" style="font-size:12px;color:var(--text-muted);padding:20px;text-align:center;display:none">No attendance data yet. Data will appear as employees check in.</div>
         </div>
         <div class="card">
           <div class="card-head"><span class="card-title">Dept Attendance %</span></div>
-          <div class="bar-row"><span class="bar-label">HR & Admin</span><div class="bar-wrap"><div class="bar-fill" style="width:96%;background:var(--accent2)"></div></div><span class="bar-val">96%</span></div>
-          <div class="bar-row"><span class="bar-label">Engineering</span><div class="bar-wrap"><div class="bar-fill" style="width:94%;background:var(--blue)"></div></div><span class="bar-val">94%</span></div>
-          <div class="bar-row"><span class="bar-label">Sales</span><div class="bar-wrap"><div class="bar-fill" style="width:88%;background:var(--accent)"></div></div><span class="bar-val">88%</span></div>
-          <div class="bar-row"><span class="bar-label">Marketing</span><div class="bar-wrap"><div class="bar-fill" style="width:82%;background:var(--gold)"></div></div><span class="bar-val">82%</span></div>
-          <div class="bar-row"><span class="bar-label">Operations</span><div class="bar-wrap"><div class="bar-fill" style="width:79%;background:var(--coral)"></div></div><span class="bar-val">79%</span></div>
+          <div id="att-dept-bars"><div style="font-size:12px;color:var(--text-muted);padding:20px;text-align:center">Add employees to see department attendance.</div></div>
         </div>
       </div>
     </div>
@@ -1272,59 +1322,70 @@ function showToast(msg, type='info') {
     <!-- ======================== LEAVE ======================== -->
     <div class="panel" id="panel-leave">
       <div class="stat-grid stat-3">
-        <div class="stat-card"><div class="s-label">Total Requests</div><div class="s-num">24</div></div>
-        <div class="stat-card"><div class="s-label">Pending</div><div class="s-num" style="color:var(--gold)">7</div></div>
-        <div class="stat-card"><div class="s-label">Approved</div><div class="s-num" style="color:var(--accent2)">14</div></div>
+        <div class="stat-card"><div class="s-label">Total Requests</div><div class="s-num" id="leave-stat-total">—</div></div>
+        <div class="stat-card"><div class="s-label">Pending</div><div class="s-num" style="color:var(--gold)" id="leave-stat-pending">—</div></div>
+        <div class="stat-card"><div class="s-label">Approved</div><div class="s-num" style="color:var(--accent2)" id="leave-stat-approved">—</div></div>
       </div>
       <div class="card">
-        <div class="card-head"><span class="card-title">Leave Requests</span><span class="badge bo">Approval Queue</span></div>
+        <div class="card-head"><span class="card-title">Leave Requests</span><span class="badge bo">Approval Queue</span>
+          <button class="btn-primary" style="width:auto;padding:7px 14px;font-size:12px;margin-left:auto" onclick="openLeaveModal()">+ Apply Leave</button>
+        </div>
         <table class="tbl">
           <thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
           <tbody id="leave-tbody"></tbody>
         </table>
+        <div id="leave-empty" style="text-align:center;padding:32px;color:var(--text-muted);font-size:13px;display:none">No leave requests yet. Employees can apply using the button above.</div>
       </div>
     </div>
 
     <!-- ======================== PAYROLL ======================== -->
     <div class="panel" id="panel-payroll">
       <div class="stat-grid">
-        <div class="stat-card"><div class="s-label">Gross Payroll</div><div class="s-num">₹54.3L</div><div class="s-change nm">October 2024</div></div>
-        <div class="stat-card"><div class="s-label">Net Disbursed</div><div class="s-num" style="color:var(--accent2)">₹46.1L</div><div class="s-change up">▲ On time</div></div>
-        <div class="stat-card"><div class="s-label">Tax Deducted</div><div class="s-num" style="color:var(--gold)">₹5.8L</div><div class="s-change nm">TDS</div></div>
-        <div class="stat-card"><div class="s-label">Bonuses Paid</div><div class="s-num" style="color:var(--blue)">₹2.4L</div><div class="s-change nm">Festival</div></div>
+        <div class="stat-card"><div class="s-label">Gross Payroll</div><div class="s-num" id="pay-stat-gross">—</div><div class="s-change nm" id="pay-stat-month">This Month</div></div>
+        <div class="stat-card"><div class="s-label">Net Disbursed</div><div class="s-num" style="color:var(--accent2)" id="pay-stat-net">—</div><div class="s-change up" id="pay-stat-status">—</div></div>
+        <div class="stat-card"><div class="s-label">Tax Deducted</div><div class="s-num" style="color:var(--gold)" id="pay-stat-tds">—</div><div class="s-change nm">TDS</div></div>
+        <div class="stat-card"><div class="s-label">Employees on Payroll</div><div class="s-num" style="color:var(--blue)" id="pay-stat-count">—</div><div class="s-change nm">From Firestore</div></div>
       </div>
       <div class="two-col">
         <div class="card">
-          <div class="card-head"><span class="card-title">Sample Payslip – Aarav Mehta</span><span class="badge bb">EMP-0042</span></div>
-          <div class="pay-row"><span class="pay-label">Basic Salary</span><span class="pay-val pos">+ ₹65,000</span></div>
-          <div class="pay-row"><span class="pay-label">HRA</span><span class="pay-val pos">+ ₹26,000</span></div>
-          <div class="pay-row"><span class="pay-label">Special Allowance</span><span class="pay-val pos">+ ₹12,000</span></div>
-          <div class="pay-row"><span class="pay-label">Performance Bonus</span><span class="pay-val pos">+ ₹8,000</span></div>
-          <div class="pay-row" style="border-top:1px solid var(--border);padding-top:10px"><span class="pay-label">Gross Total</span><span class="pay-val">₹1,11,000</span></div>
-          <div class="pay-row"><span class="pay-label">TDS</span><span class="pay-val neg">− ₹11,200</span></div>
-          <div class="pay-row"><span class="pay-label">Provident Fund</span><span class="pay-val neg">− ₹7,800</span></div>
-          <div class="pay-row" style="border-top:1px solid var(--border);padding-top:12px"><span class="pay-label" style="font-weight:600;color:#fff;font-size:14px">Net Pay</span><span class="pay-val pos" style="font-size:20px">₹92,000</span></div>
-          <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end">
-            <button class="btn-secondary" onclick="generatePDF('payslip')">⬇ Download Payslip PDF</button>
+          <div class="card-head"><span class="card-title">Payslip Generator</span><span class="badge bb">Select Employee</span></div>
+          <div class="form-group" style="margin-bottom:12px">
+            <label class="form-label">Select Employee</label>
+            <select class="form-select" id="payroll-emp-select" onchange="loadPayslipPreview()">
+              <option value="">— Select an employee —</option>
+            </select>
           </div>
+          <div id="payslip-preview-section" style="display:none">
+            <div class="pay-row"><span class="pay-label">Employee</span><span class="pay-val" id="ps-name">—</span></div>
+            <div class="pay-row"><span class="pay-label">Employee ID</span><span class="pay-val" id="ps-id">—</span></div>
+            <div class="pay-row"><span class="pay-label">Designation</span><span class="pay-val" id="ps-desg">—</span></div>
+            <div class="pay-row"><span class="pay-label">Department</span><span class="pay-val" id="ps-dept">—</span></div>
+            <div style="margin:12px 0;border-top:1px solid var(--border)"></div>
+            <div class="form-group"><label class="form-label">Basic Salary (₹)</label><input class="form-input" id="ps-basic" placeholder="Enter basic salary" /></div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">DA (₹)</label><input class="form-input" id="ps-da" placeholder="0" /></div>
+              <div class="form-group"><label class="form-label">HRA (₹)</label><input class="form-input" id="ps-hra" placeholder="0" /></div>
+              <div class="form-group"><label class="form-label">Special Allowance (₹)</label><input class="form-input" id="ps-special" placeholder="0" /></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">PF Deduction (₹)</label><input class="form-input" id="ps-pf" placeholder="0" /></div>
+              <div class="form-group"><label class="form-label">Professional Tax (₹)</label><input class="form-input" id="ps-ptax" placeholder="0" /></div>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:10px">
+              <button class="btn-secondary" onclick="previewPayslipCalc()">📊 Preview Calculation</button>
+              <button class="btn-primary" style="width:auto;padding:10px 20px" onclick="generatePayrollPDF()">⬇ Generate Payslip PDF</button>
+            </div>
+            <div id="payslip-calc-preview" style="margin-top:14px;display:none">
+              <div class="pay-row" style="border-top:1px solid var(--border);padding-top:10px"><span class="pay-label">Gross Total</span><span class="pay-val" id="ps-gross">—</span></div>
+              <div class="pay-row"><span class="pay-label">Total Deductions</span><span class="pay-val neg" id="ps-deductions">—</span></div>
+              <div class="pay-row" style="border-top:1px solid var(--border);padding-top:12px"><span class="pay-label" style="font-weight:600;color:#fff;font-size:14px">Net Pay</span><span class="pay-val pos" style="font-size:20px" id="ps-net">—</span></div>
+            </div>
+          </div>
+          <div id="payroll-emp-empty" style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">Add employees first to generate payslips.</div>
         </div>
         <div class="card">
-          <div class="card-head"><span class="card-title">Payroll by Department</span></div>
-          <svg width="100%" viewBox="0 0 180 180" style="display:block;margin:0 auto;max-width:180px">
-            <circle cx="90" cy="90" r="68" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="22"/>
-            <circle cx="90" cy="90" r="68" fill="none" stroke="var(--blue)" stroke-width="22" stroke-dasharray="180 247" class="progress-ring"/>
-            <circle cx="90" cy="90" r="68" fill="none" stroke="var(--accent)" stroke-width="22" stroke-dasharray="95 332" stroke-dashoffset="-180" class="progress-ring"/>
-            <circle cx="90" cy="90" r="68" fill="none" stroke="var(--gold)" stroke-width="22" stroke-dasharray="64 363" stroke-dashoffset="-275" class="progress-ring"/>
-            <circle cx="90" cy="90" r="68" fill="none" stroke="var(--purple)" stroke-width="22" stroke-dasharray="88 339" stroke-dashoffset="-339" class="progress-ring"/>
-            <text x="90" y="86" text-anchor="middle" fill="#fff" font-size="18" font-weight="700">₹54.3L</text>
-            <text x="90" y="102" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="10">Total Payroll</text>
-          </svg>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;justify-content:center;font-size:11px">
-            <span style="display:flex;align-items:center;gap:5px;color:var(--text-dim)"><span style="width:9px;height:9px;border-radius:50%;background:var(--blue);display:inline-block"></span>Engineering 42%</span>
-            <span style="display:flex;align-items:center;gap:5px;color:var(--text-dim)"><span style="width:9px;height:9px;border-radius:50%;background:var(--accent);display:inline-block"></span>Sales 22%</span>
-            <span style="display:flex;align-items:center;gap:5px;color:var(--text-dim)"><span style="width:9px;height:9px;border-radius:50%;background:var(--gold);display:inline-block"></span>Marketing 15%</span>
-            <span style="display:flex;align-items:center;gap:5px;color:var(--text-dim)"><span style="width:9px;height:9px;border-radius:50%;background:var(--purple);display:inline-block"></span>Others 21%</span>
-          </div>
+          <div class="card-head"><span class="card-title">Payroll by Department</span><span class="badge bg">Live from Firestore</span></div>
+          <div id="payroll-dept-chart"><div style="text-align:center;padding:32px;color:var(--text-muted);font-size:13px">Add employees to see department payroll distribution.</div></div>
         </div>
       </div>
     </div>
@@ -1332,47 +1393,47 @@ function showToast(msg, type='info') {
     <!-- ======================== RECRUITMENT ======================== -->
     <div class="panel" id="panel-recruitment">
       <div class="stat-grid">
-        <div class="stat-card"><div class="s-label">Open Positions</div><div class="s-num" style="color:var(--blue)">16</div></div>
-        <div class="stat-card"><div class="s-label">Applications</div><div class="s-num">248</div></div>
-        <div class="stat-card"><div class="s-label">Interviews Today</div><div class="s-num" style="color:var(--gold)">16</div></div>
-        <div class="stat-card"><div class="s-label">Offers Sent</div><div class="s-num" style="color:var(--accent2)">29</div></div>
+        <div class="stat-card"><div class="s-label">Open Positions</div><div class="s-num" style="color:var(--blue)" id="rec-stat-open">—</div></div>
+        <div class="stat-card"><div class="s-label">Applications</div><div class="s-num" id="rec-stat-apps">—</div></div>
+        <div class="stat-card"><div class="s-label">Interviews Scheduled</div><div class="s-num" style="color:var(--gold)" id="rec-stat-interviews">—</div></div>
+        <div class="stat-card"><div class="s-label">Offers Sent</div><div class="s-num" style="color:var(--accent2)" id="rec-stat-offers">—</div></div>
       </div>
       <div class="card">
-        <div class="card-head"><span class="card-title">Active Job Openings – ATS Pipeline</span><span class="badge bb">AI Scoring ON</span></div>
+        <div class="card-head">
+          <span class="card-title">Active Job Openings – ATS Pipeline</span>
+          <span class="badge bb">AI Scoring ON</span>
+          <button class="btn-primary" style="width:auto;padding:7px 14px;font-size:12px;margin-left:auto" onclick="openJobModal()">+ Post Job</button>
+        </div>
         <table class="tbl">
-          <thead><tr><th>Role</th><th>Department</th><th>Applied</th><th>Shortlisted</th><th>Current Stage</th><th>AI Match</th></tr></thead>
-          <tbody>
-            <tr><td>Senior React Developer</td><td>Engineering</td><td>62</td><td>18</td><td><span class="pill pill-g">Interview Round</span></td><td style="color:var(--accent2);font-weight:600">89%</td></tr>
-            <tr><td>Data Scientist</td><td>Engineering</td><td>48</td><td>12</td><td><span class="pill pill-o">Shortlisting</span></td><td style="color:var(--accent2);font-weight:600">91%</td></tr>
-            <tr><td>Sales Manager</td><td>Sales</td><td>38</td><td>9</td><td><span class="pill pill-g">Offer Sent</span></td><td style="color:var(--gold);font-weight:600">76%</td></tr>
-            <tr><td>HR Executive</td><td>HR & Admin</td><td>29</td><td>7</td><td><span class="pill pill-o">Screening</span></td><td style="color:var(--gold);font-weight:600">72%</td></tr>
-            <tr><td>Content Strategist</td><td>Marketing</td><td>41</td><td>11</td><td><span class="pill pill-o">Shortlisting</span></td><td style="color:var(--accent2);font-weight:600">83%</td></tr>
-          </tbody>
+          <thead><tr><th>Role</th><th>Department</th><th>Applied</th><th>Shortlisted</th><th>Stage</th><th>Actions</th></tr></thead>
+          <tbody id="recruitment-tbody"></tbody>
         </table>
+        <div id="recruitment-empty" style="text-align:center;padding:32px;color:var(--text-muted);font-size:13px">No job openings yet. Post a new job to start receiving applications.</div>
       </div>
     </div>
 
     <!-- ======================== PERFORMANCE ======================== -->
     <div class="panel" id="panel-performance">
       <div class="stat-grid stat-3">
-        <div class="stat-card"><div class="s-label">Avg KPI Score</div><div class="s-num" style="color:var(--accent2)">82</div><div class="s-change up">▲ Q3 was 78</div></div>
-        <div class="stat-card"><div class="s-label">At Risk</div><div class="s-num" style="color:var(--coral)">8</div><div class="s-change dn">▼ attrition risk</div></div>
-        <div class="stat-card"><div class="s-label">Appraisal Due</div><div class="s-num" style="color:var(--gold)">47</div><div class="s-change nm">Nov 15</div></div>
+        <div class="stat-card"><div class="s-label">Avg KPI Score</div><div class="s-num" style="color:var(--accent2)" id="perf-stat-avg">—</div><div class="s-change" id="perf-stat-avg-sub" style="color:var(--text-muted)">From Firestore</div></div>
+        <div class="stat-card"><div class="s-label">At Risk</div><div class="s-num" style="color:var(--coral)" id="perf-stat-risk">—</div><div class="s-change" style="color:var(--text-muted)">Flagged employees</div></div>
+        <div class="stat-card"><div class="s-label">Appraisal Due</div><div class="s-num" style="color:var(--gold)" id="perf-stat-due">—</div><div class="s-change nm" id="perf-stat-due-date">—</div></div>
       </div>
       <div class="card">
-        <div class="card-head"><span class="card-title">Employee KPI Scores – Q4 2024</span><span class="badge bo">Appraisal Cycle</span></div>
+        <div class="card-head">
+          <span class="card-title">Employee KPI Scores</span><span class="badge bo">Current Appraisal Cycle</span>
+          <button class="btn-primary" style="width:auto;padding:7px 14px;font-size:12px;margin-left:auto" onclick="openKpiModal()">+ Add KPI Entry</button>
+        </div>
         <div class="kpi-grid" id="kpi-grid"></div>
+        <div id="kpi-empty" style="text-align:center;padding:32px;color:var(--text-muted);font-size:13px">No KPI data yet. Add performance records to see scores here.</div>
       </div>
       <div class="card">
         <div class="card-head"><span class="card-title">Attrition Risk Radar</span><span class="badge br">AI Prediction</span></div>
         <table class="tbl">
           <thead><tr><th>Employee</th><th>Department</th><th>Risk Score</th><th>Signal</th><th>Action</th></tr></thead>
-          <tbody>
-            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(226,75,74,0.2);color:#f87171">RK</div>Rajesh Kumar</div></td><td>Sales</td><td style="color:var(--coral);font-weight:600">87%</td><td style="font-size:12px">Frequent absenteeism</td><td><span class="pill pill-r">Critical</span></td></tr>
-            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(239,159,39,0.2);color:var(--gold)">NP</div>Neha Patel</div></td><td>Engineering</td><td style="color:var(--gold);font-weight:600">64%</td><td style="font-size:12px">Low KPI 2 quarters</td><td><span class="pill pill-o">Monitor</span></td></tr>
-            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(239,159,39,0.2);color:var(--gold)">AS</div>Amit Singh</div></td><td>Operations</td><td style="color:var(--gold);font-weight:600">58%</td><td style="font-size:12px">Salary complaints</td><td><span class="pill pill-o">Monitor</span></td></tr>
-          </tbody>
+          <tbody id="attrition-tbody"></tbody>
         </table>
+        <div id="attrition-empty" style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">No at-risk employees detected yet. Risk signals are computed from attendance and KPI data.</div>
       </div>
     </div>
 
@@ -1589,13 +1650,13 @@ function showToast(msg, type='info') {
     <div class="panel" id="panel-selfservice">
       <div class="card" style="margin-bottom:20px">
         <div style="display:flex;align-items:center;gap:16px">
-          <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--blue));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700" id="portal-avatar">AM</div>
+          <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--blue));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700" id="portal-avatar">—</div>
           <div>
-            <div style="font-size:18px;font-weight:700" id="portal-user-name">Aarav Mehta</div>
-            <div style="font-size:12px;color:var(--text-muted)">EMP-0042 · Sr. React Developer · Engineering</div>
+            <div style="font-size:18px;font-weight:700" id="portal-user-name">Loading...</div>
+            <div style="font-size:12px;color:var(--text-muted)" id="portal-user-meta">—</div>
             <div style="margin-top:6px;display:flex;gap:8px">
-              <span class="pill pill-g">Active</span>
-              <span class="pill pill-b">Joined Mar 2022</span>
+              <span class="pill pill-g" id="portal-user-status">Active</span>
+              <span class="pill pill-b" id="portal-user-joined">—</span>
             </div>
           </div>
         </div>
@@ -1604,17 +1665,17 @@ function showToast(msg, type='info') {
         <div class="portal-card" onclick="go('leave')">
           <div class="portal-icon">🌴</div>
           <div class="portal-label">Apply Leave</div>
-          <div class="portal-desc">8 casual · 12 earned days left</div>
+          <div class="portal-desc" id="portal-leave-desc">Leave balance loading…</div>
         </div>
-        <div class="portal-card" onclick="generatePDF('payslip')">
+        <div class="portal-card" onclick="go('documents')">
           <div class="portal-icon">💰</div>
           <div class="portal-label">Download Payslip</div>
-          <div class="portal-desc">Oct 2024 – ₹92,000 net</div>
+          <div class="portal-desc">Go to Documents panel</div>
         </div>
         <div class="portal-card" onclick="go('attendance')">
           <div class="portal-icon">📅</div>
           <div class="portal-label">My Attendance</div>
-          <div class="portal-desc">90% this month · 18 days present</div>
+          <div class="portal-desc" id="portal-att-desc">Loading attendance…</div>
         </div>
         <div class="portal-card" onclick="go('documents')">
           <div class="portal-icon">📄</div>
@@ -1650,16 +1711,15 @@ function showToast(msg, type='info') {
       <div class="two-col two-eq">
         <div class="card">
           <div class="card-head"><span class="card-title">My Leave Balance</span></div>
-          <div class="pay-row"><span class="pay-label">Casual Leave</span><span class="pay-val pos">8 days</span></div>
-          <div class="pay-row"><span class="pay-label">Earned Leave</span><span class="pay-val pos">12 days</span></div>
-          <div class="pay-row"><span class="pay-label">Sick Leave</span><span class="pay-val pos">6 days</span></div>
-          <div class="pay-row"><span class="pay-label">Used this year</span><span class="pay-val">9 days</span></div>
+          <div id="portal-leave-balance">
+            <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">Sign in and match your employee record to see leave balance.</div>
+          </div>
         </div>
         <div class="card">
           <div class="card-head"><span class="card-title">Quick Actions</span></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             <button class="btn-secondary" onclick="openLeaveModal()" style="text-align:left">🌴 Apply for Leave</button>
-            <button class="btn-secondary" onclick="generatePDF('payslip')" style="text-align:left">💰 Download Last Payslip</button>
+            <button class="btn-secondary" onclick="go('documents')" style="text-align:left">💰 Download Payslip</button>
             <button class="btn-secondary" onclick="go('tickets')" style="text-align:left">🎫 Raise HR Ticket</button>
             <button class="btn-secondary" onclick="go('ai')" style="text-align:left">🤖 Chat with AI</button>
           </div>
@@ -1721,9 +1781,9 @@ function showToast(msg, type='info') {
     <!-- ======================== TICKETS ======================== -->
     <div class="panel" id="panel-tickets">
       <div class="stat-grid stat-3">
-        <div class="stat-card"><div class="s-label">Open Tickets</div><div class="s-num" style="color:var(--coral)">18</div></div>
-        <div class="stat-card"><div class="s-label">In Progress</div><div class="s-num" style="color:var(--gold)">7</div></div>
-        <div class="stat-card"><div class="s-label">Resolved Today</div><div class="s-num" style="color:var(--accent2)">5</div></div>
+        <div class="stat-card"><div class="s-label">Open Tickets</div><div class="s-num" style="color:var(--coral)" id="tick-stat-open">—</div></div>
+        <div class="stat-card"><div class="s-label">In Progress</div><div class="s-num" style="color:var(--gold)" id="tick-stat-progress">—</div></div>
+        <div class="stat-card"><div class="s-label">Resolved</div><div class="s-num" style="color:var(--accent2)" id="tick-stat-resolved">—</div></div>
       </div>
       <div style="margin-bottom:14px;text-align:right">
         <button class="btn-primary" style="width:auto;padding:9px 16px" onclick="openTicketModal()">+ Raise Ticket</button>
@@ -1734,67 +1794,49 @@ function showToast(msg, type='info') {
     <!-- ======================== NOTICE BOARD ======================== -->
     <div class="panel" id="panel-noticeboard">
       <div class="card">
-        <div class="card-head"><span class="card-title">📌 Company Announcements</span><span class="badge bg">Active</span></div>
-        <div class="ann-item"><div class="ann-ico" style="background:rgba(29,158,117,0.15)">🎉</div><div><div class="ann-title">Diwali Bonus Announced – 15% of Basic Salary</div><div class="ann-desc">All eligible employees with 6+ months tenure will receive the festival bonus on 10th November.</div></div></div>
-        <div class="ann-item"><div class="ann-ico" style="background:rgba(55,138,221,0.15)">🏠</div><div><div class="ann-title">Work From Home Policy Update – Q4 2024</div><div class="ann-desc">Effective 1st November, employees may WFH up to 3 days/week with manager approval.</div></div></div>
-        <div class="ann-item"><div class="ann-ico" style="background:rgba(239,159,39,0.15)">⚠️</div><div><div class="ann-title">Annual Appraisal Cycle Begins – November 15</div><div class="ann-desc">All HODs to submit Q3 performance reviews by 12th November. Self-assessment forms are live.</div></div></div>
-        <div class="ann-item"><div class="ann-ico" style="background:rgba(226,75,74,0.15)">📅</div><div><div class="ann-title">Office Holiday List 2025 Published</div><div class="ann-desc">13 gazetted holidays + 2 optional restricted holidays. Check under Leave Management.</div></div></div>
-        <div class="ann-item"><div class="ann-ico" style="background:rgba(127,119,221,0.15)">🚀</div><div><div class="ann-title">SmartHR Portal v2.0 Now Live!</div><div class="ann-desc">New features: Firebase Auth, Employee CRUD, AI Chat, PDF generation, WhatsApp & SMS notifications.</div></div></div>
+        <div class="card-head">
+          <span class="card-title">📌 Company Announcements</span><span class="badge bg">Live</span>
+          <button class="btn-primary" style="width:auto;padding:7px 14px;font-size:12px;margin-left:auto" onclick="openNoticeModal()">+ Post Announcement</button>
+        </div>
+        <div id="noticeboard-list"></div>
+        <div id="noticeboard-empty" style="text-align:center;padding:40px;color:var(--text-muted);font-size:13px">
+          <div style="font-size:32px;margin-bottom:12px">📌</div>
+          No announcements yet. HR Managers can post announcements using the button above.
+        </div>
       </div>
     </div>
 
     <!-- ======================== HR ANALYTICS ======================== -->
     <div class="panel" id="panel-hranalytics">
       <div class="stat-grid">
-        <div class="stat-card"><div class="s-label">Attrition Rate <span class="s-icon">📉</span></div><div class="s-num" style="color:var(--coral)">5.6%</div><div class="s-change dn">▼ Industry avg 9.2%</div></div>
-        <div class="stat-card"><div class="s-label">Gender Diversity <span class="s-icon">⚖️</span></div><div class="s-num" style="color:var(--blue)">38%</div><div class="s-change nm">Women in workforce</div></div>
-        <div class="stat-card"><div class="s-label">Avg Tenure <span class="s-icon">🏅</span></div><div class="s-num" style="color:var(--accent2)">3.2y</div><div class="s-change up">▲ Improving</div></div>
-        <div class="stat-card"><div class="s-label">New Hires MTD <span class="s-icon">🧑‍💼</span></div><div class="s-num" style="color:var(--gold)">17</div><div class="s-change up">▲ 4 above target</div></div>
+        <div class="stat-card"><div class="s-label">Attrition Rate <span class="s-icon">📉</span></div><div class="s-num" style="color:var(--coral)" id="ana-attrition">—</div><div class="s-change" id="ana-attrition-sub" style="color:var(--text-muted)">From Firestore</div></div>
+        <div class="stat-card"><div class="s-label">Gender Diversity <span class="s-icon">⚖️</span></div><div class="s-num" style="color:var(--blue)" id="ana-diversity">—</div><div class="s-change nm">Women in workforce</div></div>
+        <div class="stat-card"><div class="s-label">Avg Tenure <span class="s-icon">🏅</span></div><div class="s-num" style="color:var(--accent2)" id="ana-tenure">—</div><div class="s-change" style="color:var(--text-muted)">Average years</div></div>
+        <div class="stat-card"><div class="s-label">Total Employees <span class="s-icon">🧑‍💼</span></div><div class="s-num" style="color:var(--gold)" id="ana-total">—</div><div class="s-change" style="color:var(--text-muted)">Active headcount</div></div>
       </div>
       <div class="two-col">
         <div class="card">
           <div class="card-head"><span class="card-title">Department Strength</span><span class="badge bg">Live</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Engineering</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:73%;background:var(--blue)">128</div></div><span class="salary-val">128</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Sales</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:55%;background:var(--accent)">96</div></div><span class="salary-val">96</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Operations</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:47%;background:var(--coral)">82</div></div><span class="salary-val">82</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Marketing</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:37%;background:var(--gold)">64</div></div><span class="salary-val">64</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">HR & Admin</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:28%;background:var(--purple)">48</div></div><span class="salary-val">48</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Finance</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:21%;background:var(--accent2)">36</div></div><span class="salary-val">36</span></div>
+          <div id="ana-dept-bars"><div style="text-align:center;padding:32px;color:var(--text-muted);font-size:13px">Add employees to see department breakdown.</div></div>
         </div>
         <div class="card">
           <div class="card-head"><span class="card-title">Gender Diversity</span></div>
-          <div class="analytics-donut">
-            <svg viewBox="0 0 120 120" width="130" height="130">
-              <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="20"/>
-              <circle cx="60" cy="60" r="48" fill="none" stroke="var(--blue)" stroke-width="20" stroke-dasharray="181 120" stroke-dashoffset="30"/>
-              <circle cx="60" cy="60" r="48" fill="none" stroke="var(--accent)" stroke-width="20" stroke-dasharray="120 181" stroke-dashoffset="-150"/>
-              <text x="60" y="55" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">62%</text>
-              <text x="60" y="70" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="9">Male</text>
-            </svg>
-            <div class="donut-legend">
-              <div class="donut-leg-item"><div class="donut-dot" style="background:var(--blue)"></div>Male — 62% (335)</div>
-              <div class="donut-leg-item"><div class="donut-dot" style="background:var(--accent)"></div>Female — 38% (205)</div>
-            </div>
-          </div>
+          <div id="ana-diversity-chart"><div style="text-align:center;padding:32px;color:var(--text-muted);font-size:13px">Add employee gender data to see diversity breakdown.</div></div>
         </div>
       </div>
       <div class="two-col">
         <div class="card">
           <div class="card-head"><span class="card-title">Salary Analytics by Department</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Engineering</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:100%;background:linear-gradient(90deg,var(--blue),var(--purple))">₹22.8L</div></div><span class="salary-val">₹22.8L</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Sales</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:54%;background:var(--accent)">₹11.9L</div></div><span class="salary-val">₹11.9L</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Operations</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:41%;background:var(--coral)">₹9.1L</div></div><span class="salary-val">₹9.1L</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Marketing</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:30%;background:var(--gold)">₹6.8L</div></div><span class="salary-val">₹6.8L</span></div>
-          <div class="salary-bar-row"><span class="salary-dept">Finance</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:16%;background:var(--accent2)">₹3.7L</div></div><span class="salary-val">₹3.7L</span></div>
+          <div id="ana-salary-bars"><div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">Salary data will appear once payroll entries are added.</div></div>
         </div>
         <div class="card">
           <div class="card-head"><span class="card-title">Key HR Metrics</span></div>
-          <div class="metric-row"><span class="metric-label">Avg Salary</span><span class="metric-val" style="color:var(--accent2)">₹1,00,556</span></div>
-          <div class="metric-row"><span class="metric-label">Cost Per Hire</span><span class="metric-val">₹48,200</span></div>
-          <div class="metric-row"><span class="metric-label">Time to Fill (avg)</span><span class="metric-val" style="color:var(--gold)">28 days</span></div>
-          <div class="metric-row"><span class="metric-label">Training Hours/Emp</span><span class="metric-val">18 hrs</span></div>
-          <div class="metric-row"><span class="metric-label">Offer Acceptance Rate</span><span class="metric-val" style="color:var(--accent2)">84%</span></div>
-          <div class="metric-row"><span class="metric-label">Employee NPS</span><span class="metric-val" style="color:var(--blue)">+42</span></div>
+          <div class="metric-row"><span class="metric-label">Total Employees</span><span class="metric-val" id="ana-metric-total" style="color:var(--accent2)">—</span></div>
+          <div class="metric-row"><span class="metric-label">Active Employees</span><span class="metric-val" id="ana-metric-active">—</span></div>
+          <div class="metric-row"><span class="metric-label">Departments</span><span class="metric-val" id="ana-metric-depts" style="color:var(--gold)">—</span></div>
+          <div class="metric-row"><span class="metric-label">On Leave Today</span><span class="metric-val" id="ana-metric-leave">—</span></div>
+          <div class="metric-row"><span class="metric-label">Open Positions</span><span class="metric-val" id="ana-metric-jobs" style="color:var(--blue)">—</span></div>
+          <div class="metric-row"><span class="metric-label">Open Tickets</span><span class="metric-val" id="ana-metric-tickets">—</span></div>
         </div>
       </div>
     </div>
@@ -1802,9 +1844,9 @@ function showToast(msg, type='info') {
     <!-- ======================== EXPENSES ======================== -->
     <div class="panel" id="panel-expenses">
       <div class="stat-grid stat-3">
-        <div class="stat-card"><div class="s-label">Pending Claims</div><div class="s-num" style="color:var(--gold)">23</div><div class="s-change nm">₹2.1L total</div></div>
-        <div class="stat-card"><div class="s-label">Approved MTD</div><div class="s-num" style="color:var(--accent2)">41</div><div class="s-change up">₹3.8L disbursed</div></div>
-        <div class="stat-card"><div class="s-label">Rejected</div><div class="s-num" style="color:var(--coral)">5</div><div class="s-change dn">Policy violations</div></div>
+        <div class="stat-card"><div class="s-label">Pending Claims</div><div class="s-num" style="color:var(--gold)" id="exp-stat-pending">—</div><div class="s-change nm" id="exp-stat-pending-amt">₹0</div></div>
+        <div class="stat-card"><div class="s-label">Approved MTD</div><div class="s-num" style="color:var(--accent2)" id="exp-stat-approved">—</div><div class="s-change up" id="exp-stat-approved-amt">₹0 disbursed</div></div>
+        <div class="stat-card"><div class="s-label">Rejected</div><div class="s-num" style="color:var(--coral)" id="exp-stat-rejected">—</div><div class="s-change dn">Policy violations</div></div>
       </div>
       <div style="margin-bottom:14px;display:flex;justify-content:flex-end">
         <button class="btn-primary" style="width:auto;padding:9px 16px" onclick="openExpenseModal()">+ Submit Expense</button>
@@ -1812,12 +1854,9 @@ function showToast(msg, type='info') {
       <div class="card" style="padding:0;overflow:hidden">
         <table class="tbl">
           <thead><tr><th>Employee</th><th>Category</th><th>Amount</th><th>Date</th><th>Description</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody id="expense-tbody">
-            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(55,138,221,0.2);color:var(--blue)">AM</div>Aarav Mehta</div></td><td><span class="expense-badge expense-travel">Travel</span></td><td>₹4,200</td><td>10 Nov</td><td>Mumbai client visit</td><td><span class="pill pill-o">Pending</span></td><td><div style="display:flex;gap:6px"><button onclick="approveExpense(this)" style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✓ Approve</button><button onclick="rejectExpense(this)" style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✕</button></div></td></tr>
-            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(29,158,117,0.2);color:var(--accent2)">PS</div>Priya Sharma</div></td><td><span class="expense-badge expense-food">Food</span></td><td>₹850</td><td>11 Nov</td><td>Team lunch</td><td><span class="pill pill-g">Approved</span></td><td>—</td></tr>
-            <tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(127,119,221,0.2);color:var(--purple)">VR</div>Vikram Rao</div></td><td><span class="expense-badge expense-other">Internet</span></td><td>₹999</td><td>09 Nov</td><td>WFH broadband</td><td><span class="pill pill-o">Pending</span></td><td><div style="display:flex;gap:6px"><button onclick="approveExpense(this)" style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✓ Approve</button><button onclick="rejectExpense(this)" style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✕</button></div></td></tr>
-          </tbody>
+          <tbody id="expense-tbody"></tbody>
         </table>
+        <div id="expense-empty" style="text-align:center;padding:40px;color:var(--text-muted);font-size:13px">No expense claims yet. Employees can submit claims using the button above.</div>
       </div>
     </div>
 
@@ -1827,25 +1866,17 @@ function showToast(msg, type='info') {
         <div class="card-head"><span class="card-title">🗄️ Employee Document Vault</span><span class="badge bg">Firebase Storage</span></div>
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Securely store and access employee documents. All files are encrypted at rest.</p>
         <div class="vault-grid" id="vault-grid">
-          <div class="vault-card"><div class="vault-icon">🪪</div><div class="vault-name">Aadhaar Card</div><div class="vault-size">Verified ✓</div></div>
-          <div class="vault-card"><div class="vault-icon">🗒️</div><div class="vault-name">PAN Card</div><div class="vault-size">Verified ✓</div></div>
-          <div class="vault-card"><div class="vault-icon">🎓</div><div class="vault-name">Degree Certificate</div><div class="vault-size">2.1 MB</div></div>
-          <div class="vault-card"><div class="vault-icon">📝</div><div class="vault-name">Offer Letter</div><div class="vault-size">Mar 2022</div></div>
-          <div class="vault-card"><div class="vault-icon">📋</div><div class="vault-name">Appointment Letter</div><div class="vault-size">Mar 2022</div></div>
-          <div class="vault-card"><div class="vault-icon">💼</div><div class="vault-name">Experience Letter</div><div class="vault-size">Previous Co.</div></div>
           <div class="vault-card" onclick="showToast('Upload feature active with Firebase Storage','info')"><div class="vault-icon">⬆️</div><div class="vault-name">Upload Document</div><div class="vault-size">Click to upload</div></div>
         </div>
+        <div id="vault-empty" style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">No documents uploaded yet. Use the upload button to add employee documents.</div>
       </div>
       <div class="card">
         <div class="card-head"><span class="card-title">Expiry Alerts</span><span class="badge br">Action Required</span></div>
         <table class="tbl">
           <thead><tr><th>Employee</th><th>Document</th><th>Expiry</th><th>Status</th></tr></thead>
-          <tbody>
-            <tr><td>Rajesh Kumar</td><td>Driving License</td><td>31 Dec 2024</td><td><span class="pill pill-r">Expiring Soon</span></td></tr>
-            <tr><td>Neha Patel</td><td>Medical Certificate</td><td>15 Jan 2025</td><td><span class="pill pill-o">60 days left</span></td></tr>
-            <tr><td>Sunita Joshi</td><td>Background Check</td><td>Mar 2025</td><td><span class="pill pill-g">Valid</span></td></tr>
-          </tbody>
+          <tbody id="vault-expiry-tbody"></tbody>
         </table>
+        <div id="vault-expiry-empty" style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">No expiry alerts. Documents with expiry dates will appear here.</div>
       </div>
     </div>
 
@@ -1917,70 +1948,38 @@ service cloud.firestore {
     <!-- ======================== OKR / GOALS ======================== -->
     <div class="panel" id="panel-okr">
       <div class="stat-grid stat-3">
-        <div class="stat-card"><div class="s-label">Active Objectives</div><div class="s-num" style="color:var(--blue)">12</div></div>
-        <div class="stat-card"><div class="s-label">Avg Completion</div><div class="s-num" style="color:var(--accent2)">67%</div></div>
-        <div class="stat-card"><div class="s-label">On Track</div><div class="s-num" style="color:var(--gold)">8/12</div></div>
+        <div class="stat-card"><div class="s-label">Active Objectives</div><div class="s-num" style="color:var(--blue)" id="okr-stat-total">—</div></div>
+        <div class="stat-card"><div class="s-label">Avg Completion</div><div class="s-num" style="color:var(--accent2)" id="okr-stat-avg">—</div></div>
+        <div class="stat-card"><div class="s-label">On Track</div><div class="s-num" style="color:var(--gold)" id="okr-stat-ontrack">—</div></div>
       </div>
       <div style="margin-bottom:14px;display:flex;justify-content:flex-end">
-        <button class="btn-primary" style="width:auto;padding:9px 16px" onclick="showToast('OKR creation coming soon!','info')">+ Add Objective</button>
+        <button class="btn-primary" style="width:auto;padding:9px 16px" onclick="openOkrModal()">+ Add Objective</button>
       </div>
-      <div class="okr-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="okr-title">🚀 Scale Engineering Team to 150 Members by Q1 2025</div>
-          <span class="badge bb">Engineering</span>
-        </div>
-        <div class="okr-kr"><span class="okr-kr-label">KR1: Hire 22 new engineers</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:77%"></div></div><span class="okr-pct" style="color:var(--accent2)">77%</span></div>
-        <div class="okr-kr"><span class="okr-kr-label">KR2: Reduce time-to-hire to 20 days</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:60%;background:var(--gold)"></div></div><span class="okr-pct" style="color:var(--gold)">60%</span></div>
-        <div class="okr-kr"><span class="okr-kr-label">KR3: 90% offer acceptance rate</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:93%;background:var(--accent2)"></div></div><span class="okr-pct" style="color:var(--accent2)">93%</span></div>
-      </div>
-      <div class="okr-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="okr-title">📊 Reduce Attrition Rate Below 4% by Year End</div>
-          <span class="badge bo">HR</span>
-        </div>
-        <div class="okr-kr"><span class="okr-kr-label">KR1: Launch employee wellness program</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:100%"></div></div><span class="okr-pct" style="color:var(--accent2)">100%</span></div>
-        <div class="okr-kr"><span class="okr-kr-label">KR2: Monthly 1:1 check-ins for at-risk employees</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:50%;background:var(--gold)"></div></div><span class="okr-pct" style="color:var(--gold)">50%</span></div>
-        <div class="okr-kr"><span class="okr-kr-label">KR3: Attrition rate ≤ 4%</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:30%;background:var(--coral)"></div></div><span class="okr-pct" style="color:var(--coral)">30%</span></div>
-      </div>
-      <div class="okr-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="okr-title">💰 Optimise Payroll Cost to Revenue Ratio</div>
-          <span class="badge bg">Finance</span>
-        </div>
-        <div class="okr-kr"><span class="okr-kr-label">KR1: Automate payroll processing 100%</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:85%"></div></div><span class="okr-pct" style="color:var(--accent2)">85%</span></div>
-        <div class="okr-kr"><span class="okr-kr-label">KR2: Reduce payroll errors to zero</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:70%;background:var(--gold)"></div></div><span class="okr-pct" style="color:var(--gold)">70%</span></div>
+      <div id="okr-list"></div>
+      <div id="okr-empty" style="text-align:center;padding:48px;color:var(--text-muted);font-size:13px">
+        <div style="font-size:36px;margin-bottom:12px">🎯</div>
+        No OKRs set yet. Add your first objective to start tracking team goals.
       </div>
     </div>
 
     <!-- ======================== CAREER PORTAL ======================== -->
     <div class="panel" id="panel-careerportal">
       <div class="stat-grid stat-3">
-        <div class="stat-card"><div class="s-label">Active Openings</div><div class="s-num" style="color:var(--blue)">16</div></div>
-        <div class="stat-card"><div class="s-label">Applications MTD</div><div class="s-num">248</div></div>
-        <div class="stat-card"><div class="s-label">Referrals</div><div class="s-num" style="color:var(--accent2)">34</div></div>
+        <div class="stat-card"><div class="s-label">Active Openings</div><div class="s-num" style="color:var(--blue)" id="cp-stat-open">—</div></div>
+        <div class="stat-card"><div class="s-label">Applications MTD</div><div class="s-num" id="cp-stat-apps">—</div></div>
+        <div class="stat-card"><div class="s-label">Referrals</div><div class="s-num" style="color:var(--accent2)" id="cp-stat-referrals">—</div></div>
       </div>
       <div class="card" style="margin-bottom:16px">
-        <div class="card-head"><span class="card-title">🌐 Public Career Portal</span><span class="badge bg">Live</span></div>
+        <div class="card-head">
+          <span class="card-title">🌐 Public Career Portal</span><span class="badge bg">Live</span>
+          <button class="btn-primary" style="width:auto;padding:7px 14px;font-size:12px;margin-left:auto" onclick="openJobModal()">+ Post New Job</button>
+        </div>
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Jobs posted here appear on your public careers page. Applications go directly into Firestore.</p>
-        <div class="job-card">
-          <div class="job-title">Senior React Developer</div>
-          <div class="job-meta"><span>🏢 Engineering</span><span>📍 Hyderabad / Remote</span><span>💰 ₹18–25 LPA</span><span>📅 Posted 3 days ago</span></div>
-          <div class="job-tags"><span class="job-tag">React</span><span class="job-tag">TypeScript</span><span class="job-tag">Node.js</span><span class="job-tag">5+ yrs</span></div>
-          <div style="margin-top:12px;display:flex;gap:10px">
-            <button class="btn-secondary" style="font-size:12px;padding:6px 12px">✏️ Edit</button>
-            <button class="btn-primary" style="width:auto;padding:6px 16px;font-size:12px" onclick="showToast('62 applications received!','success')">👁 View 62 Applications</button>
-          </div>
+        <div id="career-job-list"></div>
+        <div id="career-job-empty" style="text-align:center;padding:40px;color:var(--text-muted);font-size:13px">
+          <div style="font-size:36px;margin-bottom:12px">🌐</div>
+          No jobs posted yet. Post a job opening to start receiving applications.
         </div>
-        <div class="job-card">
-          <div class="job-title">Data Scientist</div>
-          <div class="job-meta"><span>🏢 Engineering</span><span>📍 Bangalore</span><span>💰 ₹20–30 LPA</span><span>📅 Posted 5 days ago</span></div>
-          <div class="job-tags"><span class="job-tag">Python</span><span class="job-tag">ML/AI</span><span class="job-tag">TensorFlow</span><span class="job-tag">3+ yrs</span></div>
-          <div style="margin-top:12px;display:flex;gap:10px">
-            <button class="btn-secondary" style="font-size:12px;padding:6px 12px">✏️ Edit</button>
-            <button class="btn-primary" style="width:auto;padding:6px 16px;font-size:12px" onclick="showToast('48 applications received!','success')">👁 View 48 Applications</button>
-          </div>
-        </div>
-        <button class="btn-primary" style="width:auto;padding:10px 20px;margin-top:8px" onclick="showToast('Job posting form coming soon!','info')">+ Post New Job</button>
       </div>
     </div>
 
@@ -2263,20 +2262,23 @@ function switchLoginTab(tab) {
 }
 
 // ===========================
-// NOTIFICATIONS
+// NOTIFICATIONS (live — populated by sendNotification())
 // ===========================
-const notifications = [
-  {title:"Leave approved – Priya Sharma", time:"2 min ago", unread:true},
-  {title:"New ticket raised: T-2041", time:"35 min ago", unread:true},
-  {title:"Payroll processing starts tomorrow", time:"1h ago", unread:true},
-  {title:"5 new applicants for Sr. Developer", time:"3h ago", unread:true},
-  {title:"KPI review due: 3 employees", time:"Yesterday", unread:true},
-  {title:"Attrition alert: Rajesh Kumar", time:"2d ago", unread:false},
-];
+const notifications = [];
+
+function addNotification(title, source='system') {
+  notifications.unshift({ title, time: 'just now', unread: true, ts: Date.now(), source });
+  renderNotifications();
+}
 
 function renderNotifications() {
   const list = document.getElementById('notif-list');
-  list.innerHTML = notifications.slice(0,6).map((n,i) => `
+  if (!notifications.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">No notifications yet.</div>';
+    document.getElementById('notif-count').style.display = 'none';
+    return;
+  }
+  list.innerHTML = notifications.slice(0,10).map((n,i) => `
     <div class="notif-item ${n.unread?'unread':''}" onclick="markRead(${i})">
       <div class="notif-item-title">${n.title}</div>
       <div class="notif-item-time">${n.time}</div>
@@ -2300,18 +2302,8 @@ renderNotifications();
 // ===========================
 // EMPLOYEE CRUD
 // ===========================
-window.empData = [
-  {n:'Aarav Mehta', i:'AM', c:'rgba(55,138,221,0.2)', tc:'#378ADD', id:'EMP-0042', d:'Engineering', desg:'Sr. React Developer', s:'Active', j:'Mar 2022', email:'aarav@smarthr.com'},
-  {n:'Priya Sharma', i:'PS', c:'rgba(29,158,117,0.2)', tc:'#5DCAA5', id:'EMP-0091', d:'Sales', desg:'Sales Manager', s:'Active', j:'Jan 2021', email:'priya@smarthr.com'},
-  {n:'Rajesh Kumar', i:'RK', c:'rgba(226,75,74,0.2)', tc:'#f87171', id:'EMP-0058', d:'Sales', desg:'Business Dev Exec', s:'At Risk', j:'Jun 2020', email:'rajesh@smarthr.com'},
-  {n:'Neha Patel', i:'NP', c:'rgba(239,159,39,0.2)', tc:'#EF9F27', id:'EMP-0115', d:'Engineering', desg:'Data Scientist', s:'Active', j:'Aug 2023', email:'neha@smarthr.com'},
-  {n:'Vikram Rao', i:'VR', c:'rgba(127,119,221,0.2)', tc:'#7F77DD', id:'EMP-0033', d:'HR & Admin', desg:'HR Executive', s:'Active', j:'Nov 2019', email:'vikram@smarthr.com'},
-  {n:'Sunita Joshi', i:'SJ', c:'rgba(93,202,165,0.2)', tc:'#5DCAA5', id:'EMP-0077', d:'Finance', desg:'Finance Analyst', s:'Active', j:'Feb 2022', email:'sunita@smarthr.com'},
-  {n:'Amit Singh', i:'AS', c:'rgba(239,159,39,0.2)', tc:'#EF9F27', id:'EMP-0064', d:'Operations', desg:'Operations Lead', s:'On Leave', j:'Sep 2021', email:'amit@smarthr.com'},
-  {n:'Pooja Desai', i:'PD', c:'rgba(55,138,221,0.2)', tc:'#378ADD', id:'EMP-0102', d:'Marketing', desg:'Content Strategist', s:'Active', j:'May 2023', email:'pooja@smarthr.com'},
-  {n:'Kiran Bhat', i:'KB', c:'rgba(127,119,221,0.2)', tc:'#7F77DD', id:'EMP-0119', d:'Engineering', desg:'DevOps Engineer', s:'Active', j:'Jul 2024', email:'kiran@smarthr.com'},
-  {n:'Meera Iyer', i:'MI', c:'rgba(93,202,165,0.2)', tc:'#5DCAA5', id:'EMP-0088', d:'HR & Admin', desg:'Talent Acquisition', s:'Active', j:'Apr 2022', email:'meera@smarthr.com'},
-];
+// Employee data — loaded exclusively from Firestore. Never seeded here.
+window.empData = [];
 
 let editingEmpIndex = -1;
 const avatarColors = [
@@ -2344,8 +2336,6 @@ function renderEmp(data) {
   // Keep document form selector in sync
   if (typeof refreshDocEmpList === 'function') refreshDocEmpList();
 }
-renderEmp(window.empData);
-
 function filterEmployees(q) {
   const f = window.empData.filter(e => (e.n+e.d+e.desg+e.id).toLowerCase().includes(q.toLowerCase()));
   renderEmp(f);
@@ -2425,30 +2415,18 @@ async function deleteEmployee(i) {
 // ===========================
 // LEAVE
 // ===========================
-// Default local data — replaced by Firestore on login
-window.leaveData = window.leaveData || [
-  {e:'Priya Sharma', t:'Sick Leave', f:'04 Nov', to:'05 Nov', d:2, r:'Fever', s:'approved'},
-  {e:'Vikram Rao', t:'Casual Leave', f:'08 Nov', to:'08 Nov', d:1, r:'Personal work', s:'pending'},
-  {e:'Amit Singh', t:'Earned Leave', f:'11 Nov', to:'15 Nov', d:5, r:'Family vacation', s:'approved'},
-  {e:'Neha Patel', t:'Sick Leave', f:'06 Nov', to:'06 Nov', d:1, r:'Doctor visit', s:'pending'},
-  {e:'Sunita Joshi', t:'Casual Leave', f:'12 Nov', to:'12 Nov', d:1, r:'Festival', s:'pending'},
-  {e:'Pooja Desai', t:'Earned Leave', f:'18 Nov', to:'22 Nov', d:5, r:'Travel', s:'rejected'},
-];
-// Alias for local references
-Object.defineProperty(window, 'leaveData', { get(){ return window._leaveData||[]; }, set(v){ window._leaveData=v; } });
-window.leaveData = [
-  {e:'Priya Sharma', t:'Sick Leave', f:'04 Nov', to:'05 Nov', d:2, r:'Fever', s:'approved'},
-  {e:'Vikram Rao', t:'Casual Leave', f:'08 Nov', to:'08 Nov', d:1, r:'Personal work', s:'pending'},
-  {e:'Amit Singh', t:'Earned Leave', f:'11 Nov', to:'15 Nov', d:5, r:'Family vacation', s:'approved'},
-  {e:'Neha Patel', t:'Sick Leave', f:'06 Nov', to:'06 Nov', d:1, r:'Doctor visit', s:'pending'},
-  {e:'Sunita Joshi', t:'Casual Leave', f:'12 Nov', to:'12 Nov', d:1, r:'Festival', s:'pending'},
-  {e:'Pooja Desai', t:'Earned Leave', f:'18 Nov', to:'22 Nov', d:5, r:'Travel', s:'rejected'},
-];
+// All leave data loaded exclusively from Firestore
+Object.defineProperty(window, 'leaveData', { get(){ return window._leaveData||[]; }, set(v){ window._leaveData=v; renderLeaves(v); updateLeaveStats(v); } });
+window.leaveData = [];
 const leaveData = window.leaveData;
 
 function leavePill(s) { return s==='approved'?'pill-g':s==='rejected'?'pill-r':'pill-o'; }
 function renderLeave() {
   const data = window.leaveData;
+  if (!data.length) {
+    document.getElementById('leave-tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:32px;font-size:13px">No leave requests yet. Employees can apply via My Portal → Apply Leave.</td></tr>';
+    return;
+  }
   document.getElementById('leave-tbody').innerHTML = data.map((l,i) => `
     <tr>
       <td>${l.e||l.employee||''}</td><td>${l.t||l.type||''}</td>
@@ -2463,7 +2441,6 @@ function renderLeave() {
       </td>
     </tr>`).join('');
 }
-renderLeave();
 
 function actLeave(i, action) {
   leaveData[i].s = action;
@@ -2503,53 +2480,98 @@ async function submitLeave() {
 }
 
 // ===========================
-// ATTENDANCE CHART
+// ATTENDANCE CHART — driven from Firestore attendance collection
 // ===========================
-const attValues = [88,92,90,85,93,87,91,96,90,88,94,89,92,91,88,90,93,87,85,91,94,90,88,92,89,91,93,90,88,92];
-const chartEl = document.getElementById('att-chart');
-const maxV = Math.max(...attValues);
-attValues.forEach((v,i) => {
-  const b = document.createElement('div');
-  b.className = 'tc-bar'; b.style.height = ((v/maxV)*100)+'%'; b.style.flex = '1';
-  b.style.background = v>=90?'var(--accent)':v>=85?'var(--gold)':'var(--coral)';
-  b.title = `Day ${i+1}: ${v}%`;
-  chartEl.appendChild(b);
-});
+function renderAttendanceChart(values) {
+  const chartEl = document.getElementById('att-chart');
+  chartEl.innerHTML = '';
+  if (!values || !values.length) {
+    document.getElementById('att-chart-empty').style.display = 'block';
+    chartEl.style.display = 'none';
+    return;
+  }
+  document.getElementById('att-chart-empty').style.display = 'none';
+  chartEl.style.display = '';
+  const maxV = Math.max(...values, 1);
+  values.forEach((v, i) => {
+    const b = document.createElement('div');
+    b.className = 'tc-bar'; b.style.height = ((v/maxV)*100)+'%'; b.style.flex = '1';
+    b.style.background = v>=90?'var(--accent)':v>=85?'var(--gold)':'var(--coral)';
+    b.title = `Day ${i+1}: ${v}%`;
+    chartEl.appendChild(b);
+  });
+}
+// Attendance stats from Firestore — populated when data loads
+function updateAttendanceStats() {
+  const emp = window.empData || [];
+  const total = emp.length;
+  const onLeave = (window.leaveData||[]).filter(l => {
+    const s = l.s || l.status;
+    const today = new Date().toISOString().slice(0,10);
+    return s === 'approved' && l.from <= today && l.to >= today;
+  }).length;
+  document.getElementById('att-present').textContent = total > 0 ? (total - onLeave) : '—';
+  document.getElementById('att-absent').textContent = '—';
+  document.getElementById('att-on-leave').textContent = onLeave || '—';
+  document.getElementById('att-present-pct').textContent = total > 0 ? `of ${total} total employees` : 'Add employees first';
+  // Dept attendance bars from empData
+  const deptEl = document.getElementById('att-dept-bars');
+  const depts = {};
+  emp.forEach(e => { depts[e.d||'Other'] = (depts[e.d||'Other']||0)+1; });
+  const entries = Object.entries(depts);
+  if (!entries.length) {
+    deptEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:20px;text-align:center">Add employees to see department attendance.</div>';
+  } else {
+    const max = Math.max(...entries.map(([,v])=>v),1);
+    const colors = ['var(--blue)','var(--accent2)','var(--purple)','var(--gold)','var(--coral)','var(--accent)'];
+    deptEl.innerHTML = entries.map(([dept,cnt],i)=>`
+      <div class="salary-bar-row">
+        <span class="salary-dept">${dept}</span>
+        <div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:${Math.round((cnt/max)*100)}%;background:${colors[i%colors.length]}">${cnt}</div></div>
+        <span class="salary-val">${cnt}</span>
+      </div>`).join('');
+  }
+}
+renderAttendanceChart([]);
 
 // ===========================
-// KPI
+// KPI — rendered from Firestore employee performance data
 // ===========================
-const kpis = [
-  {n:'Aarav Mehta', s:91, c:'var(--blue)'},{n:'Priya Sharma', s:84, c:'var(--accent)'},
-  {n:'Vikram Rao', s:76, c:'var(--purple)'},{n:'Neha Patel', s:88, c:'var(--gold)'},
-  {n:'Sunita Joshi', s:79, c:'var(--accent2)'},{n:'Pooja Desai', s:95, c:'var(--coral)'},
-];
-document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
-  <div class="kpi-card">
-    <div class="kpi-name">${k.n}</div>
-    <div class="kpi-score" style="color:${k.c}">${k.s}<span style="font-size:13px;color:var(--text-muted)">/100</span></div>
-    <div class="kpi-bar-wrap"><div class="kpi-bar-fill" style="width:${k.s}%;background:${k.c}"></div></div>
-  </div>`).join('');
+function renderKPI() {
+  const emp = window.empData || [];
+  const grid = document.getElementById('kpi-grid');
+  if (!emp.length) {
+    grid.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:32px;text-align:center;grid-column:1/-1">No employee data yet. Add employees to track KPI scores.</div>';
+    return;
+  }
+  const colors = ['var(--blue)','var(--accent)','var(--purple)','var(--gold)','var(--accent2)','var(--coral)'];
+  grid.innerHTML = emp.filter(e => e.kpiScore !== undefined).map((e,i) => `
+    <div class="kpi-card">
+      <div class="kpi-name">${e.n}</div>
+      <div class="kpi-score" style="color:${colors[i%colors.length]}">${e.kpiScore}<span style="font-size:13px;color:var(--text-muted)">/100</span></div>
+      <div class="kpi-bar-wrap"><div class="kpi-bar-fill" style="width:${e.kpiScore}%;background:${colors[i%colors.length]}"></div></div>
+    </div>`).join('') || '<div style="font-size:13px;color:var(--text-muted);padding:24px;text-align:center;grid-column:1/-1">No KPI scores recorded yet. Update employee records to add scores.</div>';
+}
+renderKPI();
 
 // ===========================
-// TICKETS
+// TICKETS — loaded from Firestore
 // ===========================
-let tickets = [
-  {id:'T-2041', title:'Salary discrepancy in October payslip', e:'Rajesh Kumar', d:'Sales', p:'high', s:'open', t:'2h ago'},
-  {id:'T-2040', title:'Leave balance not updated after approval', e:'Neha Patel', d:'Engineering', p:'med', s:'in-progress', t:'5h ago'},
-  {id:'T-2039', title:'IT laptop replacement request', e:'Amit Singh', d:'Operations', p:'low', s:'open', t:'1d ago'},
-  {id:'T-2038', title:'Admin – parking slot reallocation request', e:'Sunita Joshi', d:'Finance', p:'low', s:'resolved', t:'2d ago'},
-  {id:'T-2037', title:'Harassment concern – formal complaint', e:'Anonymous', d:'HR', p:'high', s:'in-progress', t:'3d ago'},
-];
+let tickets = []; // Populated from Firestore
 function priClass(p){return p==='high'?'pill-r':p==='med'?'pill-o':'pill-g';}
 function sClass(s){return s==='resolved'?'pill-g':s==='in-progress'?'pill-o':'pill-r';}
 function renderTickets() {
-  document.getElementById('ticket-list').innerHTML = tickets.map(t => `
+  const el = document.getElementById('ticket-list');
+  if (!tickets.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:32px;text-align:center">No tickets yet. Employees can raise tickets using the button above.</div>';
+    return;
+  }
+  el.innerHTML = tickets.map(t => `
     <div class="ticket-card">
       <div class="ticket-head">
         <div>
           <div class="ticket-title">${t.title}</div>
-          <div class="ticket-meta">${t.id} · ${t.e} · ${t.d} · ${t.t}</div>
+          <div class="ticket-meta">${t.id} · ${t.e} · ${t.d} · ${t.t||''}</div>
         </div>
         <div class="ticket-badges">
           <span class="pill ${priClass(t.p)}">${t.p.toUpperCase()}</span>
@@ -2558,7 +2580,6 @@ function renderTickets() {
       </div>
     </div>`).join('');
 }
-renderTickets();
 
 function openTicketModal() { document.getElementById('ticket-modal').classList.add('open'); }
 function submitTicket() {
@@ -3343,11 +3364,7 @@ function prefillDocFromSelect() {
 // ===========================
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
-let calEvents = [
-  {date:`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-15`, title:'Appraisal Cycle Begins', type:'Reminder'},
-  {date:`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-28`, title:'Payroll Processing', type:'Reminder'},
-  {date:`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-20`, title:'Team Interview – Sr. Dev', type:'Interview'},
-];
+let calEvents = []; // Loaded from Firestore via loadFirestoreEmployees → calendarEvents collection
 const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function renderCalendar() {
@@ -3389,14 +3406,28 @@ function renderEvents() {
 
 function calNav(dir) { calMonth += dir; if(calMonth>11){calMonth=0;calYear++;}if(calMonth<0){calMonth=11;calYear--;} renderCalendar(); }
 function openCalModal() { document.getElementById('cal-modal').classList.add('open'); }
-function saveCalEvent() {
+async function saveCalEvent() {
   const title = document.getElementById('cal-title').value.trim();
   const date = document.getElementById('cal-date').value;
+  const type = document.getElementById('cal-type').value;
   if (!title || !date) { showToast('Please fill title and date','error'); return; }
-  calEvents.push({date, title, type:document.getElementById('cal-type').value});
-  renderCalendar();
-  closeModal('cal-modal');
-  showToast('Event added to calendar!','success');
+  if (window.firestoreAddCalEvent) {
+    try {
+      await window.firestoreAddCalEvent({ date, title, type, addedBy: window._currentUser?.email });
+      auditLog('CAL_EVENT_ADD', { title, date, type });
+      closeModal('cal-modal');
+      showToast('Event added!', 'success');
+      // onSnapshot listener will update calEvents and re-render
+    } catch(e) { showToast('Failed to save event: ' + e.message, 'error'); }
+  } else {
+    // Fallback if Firestore not ready
+    calEvents.push({ date, title, type });
+    renderCalendar(); renderEventsList();
+    closeModal('cal-modal');
+    showToast('Event added (local only — Firestore not connected)', 'info');
+  }
+  document.getElementById('cal-title').value = '';
+  document.getElementById('cal-date').value = '';
 }
 renderCalendar();
 
@@ -3409,13 +3440,13 @@ function toggleChannel(ch, el) {
   showToast(`${ch.charAt(0).toUpperCase()+ch.slice(1)} notifications ${el.checked?'enabled':'disabled'}`, el.checked?'success':'info');
 }
 
-function sendNotification(user, message) {
-  // Placeholder for real notification logic
-  // In production: call Twilio/SendGrid/WATI APIs via backend
-  console.log(`[SmartHR Notification] To: ${user} | ${message}`);
-  // Example Twilio SMS (backend call):
-  // fetch('/api/send-sms', {method:'POST', body:JSON.stringify({to:'+91XXXXXXXXXX', message})})
-}
+function sendNotification(user, message) { addNotification(`${user}: ${message}`, 'system'); console.log(`[SmartHR] To: ${user} | ${message}`); }
+
+
+
+
+
+
 
 // ===========================
 // MODALS
@@ -3491,6 +3522,735 @@ async function generatePerfReview() {
     auditLog('PERF_REVIEW_GEN', { employee: name, score, role: window._userRole });
   } catch(e) {
     out.innerHTML = `⚠️ ${e.message || 'Generation failed. Please try again.'}`;
+  }
+}
+
+// ============================================================
+//  RENDER FUNCTIONS — all driven by Firestore real-time data
+// ============================================================
+
+// ── LEAVES ──
+function renderLeaves(leaves) {
+  const tbody = document.getElementById('leave-tbody');
+  const empty = document.getElementById('leave-empty');
+  if (!tbody) return;
+  if (!leaves || leaves.length === 0) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  // Employees only see own leaves
+  const role = window._userRole;
+  const uid = window._currentUser?.uid;
+  const visible = (role === 'employee')
+    ? leaves.filter(l => l.uid === uid)
+    : leaves;
+  tbody.innerHTML = visible.map((l, i) => {
+    const canApprove = rbacHas('canApproveLeave') && l.status === 'Pending';
+    const statusClass = l.status === 'Approved' ? 'pill-g' : l.status === 'Rejected' ? 'pill-r' : 'pill-o';
+    const from = l.from ? new Date(l.from).toLocaleDateString('en-IN') : '—';
+    const to   = l.to   ? new Date(l.to).toLocaleDateString('en-IN')   : '—';
+    const days = (l.from && l.to) ? Math.max(1, Math.round((new Date(l.to)-new Date(l.from))/(86400000))+1) : '—';
+    return `<tr>
+      <td>${l.empName || l.emp || '—'}</td>
+      <td>${l.type || '—'}</td>
+      <td>${from}</td><td>${to}</td><td>${days}</td>
+      <td style="font-size:12px">${l.reason || '—'}</td>
+      <td><span class="pill ${statusClass}">${l.status || 'Pending'}</span></td>
+      <td>${canApprove ? `<div style="display:flex;gap:5px">
+        <button onclick="updateLeaveStatus('${l._id}','Approved')" style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 9px;border-radius:6px;font-size:11px;cursor:pointer">✓ Approve</button>
+        <button onclick="updateLeaveStatus('${l._id}','Rejected')" style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 9px;border-radius:6px;font-size:11px;cursor:pointer">✕</button>
+      </div>` : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+function updateLeaveStats(leaves) {
+  const total = leaves.length, pending = leaves.filter(l=>l.status==='Pending').length, approved = leaves.filter(l=>l.status==='Approved').length;
+  const t = document.getElementById('leave-stat-total'), p = document.getElementById('leave-stat-pending'), a = document.getElementById('leave-stat-approved');
+  if (t) t.textContent = total; if (p) p.textContent = pending; if (a) a.textContent = approved;
+  // Dashboard glance
+  const gp = document.getElementById('glance-pending'), gl = document.getElementById('glance-leaves');
+  if (gp) gp.textContent = pending; if (gl) gl.textContent = total;
+  const dlt = document.getElementById('dash-leave-total'), dlp = document.getElementById('dash-leave-pending');
+  if (dlt) dlt.textContent = total; if (dlp) dlp.textContent = pending + ' pending';
+}
+async function updateLeaveStatus(id, status) {
+  if (!rbacHas('canApproveLeave')) { showToast('⛔ You cannot approve/deny leaves.','error'); return; }
+  try {
+    await window.firestoreUpdateLeave(id, { status });
+    auditLog(status === 'Approved' ? 'LEAVE_APPROVE' : 'LEAVE_DENY', { leaveId: id, status });
+    showToast(`Leave ${status}!`, status === 'Approved' ? 'success' : 'info');
+  } catch(e) { showToast('Error updating leave: ' + e.message, 'error'); }
+}
+
+// ── TICKETS ──
+function renderTickets(tickets) {
+  const el = document.getElementById('ticket-list');
+  if (!el) return;
+  const role = window._userRole, uid = window._currentUser?.uid;
+  const visible = (role === 'employee') ? tickets.filter(t => t.uid === uid) : tickets;
+  if (!visible || visible.length === 0) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:13px"><div style="font-size:36px;margin-bottom:12px">🎫</div>No tickets yet. Raise a ticket for HR support.</div>';
+    return;
+  }
+  el.innerHTML = visible.map(t => {
+    const statusClass = t.status === 'Resolved' ? 'pill-g' : t.status === 'In Progress' ? 'pill-o' : 'pill-r';
+    const date = t.createdAt?.toDate ? t.createdAt.toDate().toLocaleDateString('en-IN') : (t.date || '—');
+    return `<div class="ticket-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div><div style="font-weight:600;font-size:13px">${t.subject || '—'}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${t.empName||t.emp||'—'} · ${t.category||'General'} · ${date}</div></div>
+        <span class="pill ${statusClass}">${t.status || 'Open'}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim)">${t.description || ''}</div>
+      ${rbacHas('canApproveLeave') && t.status !== 'Resolved' ? `<div style="margin-top:10px;display:flex;gap:8px">
+        <button onclick="updateTicketStatus('${t._id}','In Progress')" style="background:rgba(239,159,39,0.15);border:1px solid rgba(239,159,39,0.3);color:var(--gold);padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer">→ In Progress</button>
+        <button onclick="updateTicketStatus('${t._id}','Resolved')" style="background:rgba(29,158,117,0.15);border:1px solid rgba(29,158,117,0.3);color:var(--accent2);padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer">✓ Resolve</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+function updateTicketStats(tickets) {
+  const open = tickets.filter(t=>t.status==='Open'||!t.status).length;
+  const prog = tickets.filter(t=>t.status==='In Progress').length;
+  const res  = tickets.filter(t=>t.status==='Resolved').length;
+  const to = document.getElementById('tick-stat-open'), tp = document.getElementById('tick-stat-progress'), tr = document.getElementById('tick-stat-resolved');
+  if (to) to.textContent = open; if (tp) tp.textContent = prog; if (tr) tr.textContent = res;
+  const dt = document.getElementById('dash-tickets'), dts = document.getElementById('dash-tickets-sub'), gt = document.getElementById('glance-tickets');
+  if (dt) dt.textContent = open; if (dts) dts.textContent = prog + ' in progress'; if (gt) gt.textContent = open;
+  // nav badge
+  const nb = document.querySelector('[data-panel="tickets"] .nav-badge');
+  if (nb) nb.textContent = open;
+}
+async function updateTicketStatus(id, status) {
+  try { await window.firestoreUpdateTicket(id, { status }); auditLog('TICKET_UPDATE', { id, status }); showToast('Ticket updated!','success'); }
+  catch(e) { showToast('Error: '+e.message,'error'); }
+}
+
+// ── EXPENSES ──
+function renderExpenses(expenses) {
+  const tbody = document.getElementById('expense-tbody');
+  const empty = document.getElementById('expense-empty');
+  if (!tbody) return;
+  const role = window._userRole, uid = window._currentUser?.uid;
+  const visible = (role === 'employee') ? expenses.filter(e => e.uid === uid) : expenses;
+  if (!visible || visible.length === 0) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  const catColors = { Travel:'expense-travel', Food:'expense-food', Internet:'expense-other', Medical:'expense-other', Equipment:'expense-other', Other:'expense-other' };
+  tbody.innerHTML = visible.map(e => {
+    const statusClass = e.status==='Approved' ? 'pill-g' : e.status==='Rejected' ? 'pill-r' : 'pill-o';
+    const date = e.date || (e.createdAt?.toDate ? e.createdAt.toDate().toLocaleDateString('en-IN') : '—');
+    const initials = (e.empName||'??').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const canAct = rbacHas('canApproveLeave') && e.status === 'Pending';
+    return `<tr>
+      <td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(55,138,221,0.2);color:var(--blue)">${initials}</div>${e.empName||'—'}</div></td>
+      <td><span class="expense-badge ${catColors[e.category]||'expense-other'}">${e.category||'Other'}</span></td>
+      <td>₹${Number(e.amount||0).toLocaleString('en-IN')}</td>
+      <td>${date}</td>
+      <td style="font-size:12px">${e.description||'—'}</td>
+      <td><span class="pill ${statusClass}">${e.status||'Pending'}</span></td>
+      <td>${canAct ? `<div style="display:flex;gap:6px">
+        <button onclick="updateExpenseStatus('${e._id}','Approved')" style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✓</button>
+        <button onclick="updateExpenseStatus('${e._id}','Rejected')" style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">✕</button>
+      </div>` : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+function updateExpenseStats(expenses) {
+  const pending = expenses.filter(e=>!e.status||e.status==='Pending');
+  const approved = expenses.filter(e=>e.status==='Approved');
+  const rejected = expenses.filter(e=>e.status==='Rejected');
+  const totalPendingAmt = pending.reduce((s,e)=>s+Number(e.amount||0),0);
+  const totalApprovedAmt = approved.reduce((s,e)=>s+Number(e.amount||0),0);
+  const ep = document.getElementById('exp-stat-pending'), epa = document.getElementById('exp-stat-pending-amt');
+  const ea = document.getElementById('exp-stat-approved'), eaa = document.getElementById('exp-stat-approved-amt');
+  const er = document.getElementById('exp-stat-rejected'), ge = document.getElementById('glance-expenses');
+  if (ep) ep.textContent = pending.length;
+  if (epa) epa.textContent = '₹' + totalPendingAmt.toLocaleString('en-IN');
+  if (ea) ea.textContent = approved.length;
+  if (eaa) eaa.textContent = '₹' + totalApprovedAmt.toLocaleString('en-IN') + ' disbursed';
+  if (er) er.textContent = rejected.length;
+  if (ge) ge.textContent = pending.length;
+}
+async function updateExpenseStatus(id, status) {
+  if (!rbacHas('canApproveLeave')) { showToast('⛔ Permission denied.','error'); return; }
+  try { await window.firestoreUpdateExpense(id, { status }); showToast(`Expense ${status}!`, status==='Approved'?'success':'info'); }
+  catch(e) { showToast('Error: '+e.message,'error'); }
+}
+
+// ── NOTICE BOARD ──
+function renderNoticeBoard(notices) {
+  const el = document.getElementById('noticeboard-list');
+  const empty = document.getElementById('noticeboard-empty');
+  if (!el) return;
+  if (!notices || notices.length === 0) {
+    el.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  const icons = ['🎉','📢','⚠️','📅','🚀','💡','🏆','🔔'];
+  const colors = ['rgba(29,158,117,0.15)','rgba(55,138,221,0.15)','rgba(239,159,39,0.15)','rgba(226,75,74,0.15)','rgba(127,119,221,0.15)'];
+  el.innerHTML = [...notices].reverse().map((n, i) => {
+    const date = n.createdAt?.toDate ? n.createdAt.toDate().toLocaleDateString('en-IN') : '';
+    const canDelete = rbacHas('canAddEmployee');
+    return `<div class="ann-item">
+      <div class="ann-ico" style="background:${colors[i%colors.length]}">${icons[i%icons.length]}</div>
+      <div style="flex:1">
+        <div class="ann-title">${n.title||'—'}</div>
+        <div class="ann-desc">${n.body||''}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">${n.postedBy||''} ${date ? '· '+date : ''}</div>
+      </div>
+      ${canDelete ? `<button onclick="deleteNotice('${n._id}')" style="background:rgba(226,75,74,0.15);border:none;color:#f87171;padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;align-self:flex-start">✕</button>` : ''}
+    </div>`;
+  }).join('');
+}
+async function deleteNotice(id) {
+  if (!confirm('Delete this announcement?')) return;
+  try { await window.firestoreDeleteNotice(id); showToast('Announcement removed.','info'); }
+  catch(e) { showToast('Error: '+e.message,'error'); }
+}
+
+// ── RECRUITMENT ──
+function renderRecruitment(jobs) {
+  const tbody = document.getElementById('recruitment-tbody');
+  const empty = document.getElementById('recruitment-empty');
+  if (!tbody) return;
+  if (!jobs || jobs.length === 0) { tbody.innerHTML=''; if(empty)empty.style.display='block'; return; }
+  if (empty) empty.style.display='none';
+  const stageClass = {Screening:'pill-o',Shortlisting:'pill-o','Interview Round':'pill-g','Offer Sent':'pill-g',Closed:'pill-r'};
+  tbody.innerHTML = jobs.map(j => `<tr>
+    <td style="font-weight:500">${j.title||'—'}</td>
+    <td>${j.department||'—'}</td>
+    <td>${j.applied||0}</td>
+    <td>${j.shortlisted||0}</td>
+    <td><span class="pill ${stageClass[j.stage]||'pill-o'}">${j.stage||'Screening'}</span></td>
+    <td><div style="display:flex;gap:6px">
+      <button onclick="openJobModal('${j._id}')" style="background:rgba(55,138,221,0.15);border:none;color:var(--blue);padding:4px 9px;border-radius:6px;font-size:11px;cursor:pointer">✏️</button>
+      ${rbacHas('canAddEmployee') ? `<button onclick="deleteJob('${j._id}')" style="background:rgba(226,75,74,0.15);border:none;color:#f87171;padding:4px 9px;border-radius:6px;font-size:11px;cursor:pointer">🗑</button>` : ''}
+    </div></td>
+  </tr>`).join('');
+}
+function updateRecruitmentStats(jobs) {
+  const open = jobs.filter(j=>j.stage!=='Closed').length;
+  const apps = jobs.reduce((s,j)=>s+Number(j.applied||0),0);
+  const interviews = jobs.filter(j=>j.stage==='Interview Round').length;
+  const offers = jobs.filter(j=>j.stage==='Offer Sent').length;
+  ['rec-stat-open','cp-stat-open'].forEach(id=>{ const el=document.getElementById(id); if(el)el.textContent=open; });
+  ['rec-stat-apps','cp-stat-apps'].forEach(id=>{ const el=document.getElementById(id); if(el)el.textContent=apps; });
+  const ri=document.getElementById('rec-stat-interviews'), ro=document.getElementById('rec-stat-offers');
+  if(ri)ri.textContent=interviews; if(ro)ro.textContent=offers;
+  const dj=document.getElementById('dash-jobs'), djs=document.getElementById('dash-jobs-sub');
+  if(dj)dj.textContent=open; if(djs)djs.textContent='positions open';
+}
+function renderCareerPortal(jobs) {
+  const el = document.getElementById('career-job-list');
+  const empty = document.getElementById('career-job-empty');
+  if (!el) return;
+  const active = jobs.filter(j=>j.stage!=='Closed');
+  if (!active.length) { el.innerHTML=''; if(empty)empty.style.display='block'; return; }
+  if(empty)empty.style.display='none';
+  el.innerHTML = active.map(j => `<div class="job-card">
+    <div class="job-title">${j.title||'—'}</div>
+    <div class="job-meta"><span>🏢 ${j.department||'—'}</span><span>📍 ${j.location||'Hyderabad'}</span>${j.salary?`<span>💰 ${j.salary}</span>`:''}</div>
+    ${j.tags ? `<div class="job-tags">${j.tags.split(',').map(t=>`<span class="job-tag">${t.trim()}</span>`).join('')}</div>` : ''}
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button onclick="openJobModal('${j._id}')" style="font-size:12px" class="btn-secondary">✏️ Edit</button>
+      <span style="font-size:12px;color:var(--text-muted);padding:6px 0">${j.applied||0} applications</span>
+    </div>
+  </div>`).join('');
+}
+async function deleteJob(id) {
+  if(!confirm('Delete this job posting?'))return;
+  try { await window.firestoreDeleteJob(id); showToast('Job removed.','info'); } catch(e){showToast('Error: '+e.message,'error');}
+}
+
+// ── OKRs ──
+function renderOKRs(okrs) {
+  const el = document.getElementById('okr-list');
+  const empty = document.getElementById('okr-empty');
+  if (!el) return;
+  if (!okrs || okrs.length === 0) { el.innerHTML=''; if(empty)empty.style.display='block'; return; }
+  if(empty)empty.style.display='none';
+  const total = okrs.length, avgPct = okrs.length ? Math.round(okrs.reduce((s,o)=>s+Number(o.progress||0),0)/okrs.length) : 0;
+  const onTrack = okrs.filter(o=>Number(o.progress||0)>=50).length;
+  const os=document.getElementById('okr-stat-total'), oa=document.getElementById('okr-stat-avg'), ot=document.getElementById('okr-stat-ontrack');
+  if(os)os.textContent=total; if(oa)oa.textContent=avgPct+'%'; if(ot)ot.textContent=onTrack+'/'+total;
+  el.innerHTML = okrs.map(o => {
+    const pct = Number(o.progress||0);
+    const color = pct>=70?'var(--accent2)':pct>=40?'var(--gold)':'var(--coral)';
+    const krs = (o.keyResults||[]);
+    return `<div class="okr-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="okr-title">${o.objective||'—'}</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="badge bb">${o.department||'General'}</span>
+          ${rbacHas('canAddEmployee') ? `<button onclick="deleteOKR('${o._id}')" style="background:rgba(226,75,74,0.1);border:none;color:#f87171;padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer">✕</button>` : ''}
+        </div>
+      </div>
+      ${krs.map((kr,i) => `<div class="okr-kr"><span class="okr-kr-label">KR${i+1}: ${kr.label}</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:${kr.pct||0}%;background:${color}"></div></div><span class="okr-pct" style="color:${color}">${kr.pct||0}%</span></div>`).join('')}
+      <div class="okr-kr" style="margin-top:8px"><span class="okr-kr-label" style="font-weight:600">Overall Progress</span><div class="okr-progress-wrap"><div class="okr-progress-fill" style="width:${pct}%;background:${color}"></div></div><span class="okr-pct" style="color:${color};font-weight:600">${pct}%</span></div>
+    </div>`;
+  }).join('');
+}
+async function deleteOKR(id) {
+  if(!confirm('Delete this objective?'))return;
+  try { await window.firestoreDeleteOKR(id); showToast('Objective removed.','info'); } catch(e){showToast('Error: '+e.message,'error');}
+}
+
+// ── KPI / PERFORMANCE ──
+function renderKPIGrid(kpis) {
+  const el = document.getElementById('kpi-grid');
+  const empty = document.getElementById('kpi-empty');
+  const attrTbody = document.getElementById('attrition-tbody');
+  const attrEmpty = document.getElementById('attrition-empty');
+  if (!el) return;
+  if (!kpis || kpis.length === 0) { el.innerHTML=''; if(empty)empty.style.display='block'; if(attrTbody)attrTbody.innerHTML=''; if(attrEmpty)attrEmpty.style.display='block'; return; }
+  if(empty)empty.style.display='none';
+  el.innerHTML = kpis.map(k => {
+    const score = Number(k.score||0);
+    const color = score>=80?'var(--accent2)':score>=60?'var(--gold)':'var(--coral)';
+    const initials = (k.empName||'??').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    return `<div class="kpi-card"><div class="kpi-av">${initials}</div><div class="kpi-name">${k.empName||'—'}</div>
+      <div class="kpi-dept">${k.department||'—'}</div>
+      <div class="kpi-score" style="color:${color}">${score}</div>
+      <div class="kpi-bar-wrap"><div class="kpi-bar-fill" style="width:${score}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+  // Attrition risk — employees with score < 60
+  const atRisk = kpis.filter(k=>Number(k.score||0)<60);
+  if (attrTbody) {
+    if (!atRisk.length) { attrTbody.innerHTML=''; if(attrEmpty)attrEmpty.style.display='block'; return; }
+    if(attrEmpty)attrEmpty.style.display='none';
+    attrTbody.innerHTML = atRisk.map(k => {
+      const score = Number(k.score||0);
+      const riskPct = Math.round(100 - score);
+      const cls = riskPct>70?'pill-r':'pill-o';
+      const initials = (k.empName||'??').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+      return `<tr><td><div class="emp-name-cell"><div class="emp-av" style="background:rgba(226,75,74,0.2);color:#f87171">${initials}</div>${k.empName||'—'}</div></td>
+        <td>${k.department||'—'}</td><td style="color:var(--coral);font-weight:600">${riskPct}%</td>
+        <td style="font-size:12px">${k.signal||'Low KPI score'}</td><td><span class="pill ${cls}">${riskPct>70?'Critical':'Monitor'}</span></td></tr>`;
+    }).join('');
+  }
+}
+function updatePerfStats(kpis) {
+  const avg = kpis.length ? Math.round(kpis.reduce((s,k)=>s+Number(k.score||0),0)/kpis.length) : 0;
+  const atRisk = kpis.filter(k=>Number(k.score||0)<60).length;
+  const pa=document.getElementById('perf-stat-avg'), pr=document.getElementById('perf-stat-risk');
+  if(pa)pa.textContent=kpis.length?avg:'—'; if(pr)pr.textContent=kpis.length?atRisk:'—';
+}
+
+// ── HR ANALYTICS — compute from live empData ──
+function updateHRAnalytics() {
+  const emps = window.empData || [];
+  const total = emps.length;
+  const active = emps.filter(e=>e.s==='Active').length;
+  const leaves = (window.leaveData||[]).filter(l=>l.status==='Approved' && isToday(l)).length;
+  const jobs = (window.jobData||[]).filter(j=>j.stage!=='Closed').length;
+  const tickets = (window.ticketData||[]).filter(t=>!t.status||t.status==='Open').length;
+  // Top-level stats
+  const anT=document.getElementById('ana-total'), anM=document.getElementById('ana-metric-total'), anA=document.getElementById('ana-metric-active');
+  const anD=document.getElementById('ana-metric-depts'), anL=document.getElementById('ana-metric-leave');
+  const anJ=document.getElementById('ana-metric-jobs'), anTk=document.getElementById('ana-metric-tickets');
+  if(anT)anT.textContent=total+''; if(anM)anM.textContent=total; if(anA)anA.textContent=active;
+  if(anL)anL.textContent=leaves; if(anJ)anJ.textContent=jobs; if(anTk)anTk.textContent=tickets;
+  // Department bars
+  const deptEl = document.getElementById('ana-dept-bars');
+  if (deptEl && total > 0) {
+    const deptCounts = {};
+    emps.forEach(e => { deptCounts[e.d] = (deptCounts[e.d]||0)+1; });
+    const maxCount = Math.max(...Object.values(deptCounts));
+    const colors = ['var(--blue)','var(--accent)','var(--coral)','var(--gold)','var(--purple)','var(--accent2)'];
+    deptEl.innerHTML = Object.entries(deptCounts).sort((a,b)=>b[1]-a[1]).map(([dept,count],i) =>
+      `<div class="salary-bar-row"><span class="salary-dept">${dept}</span><div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:${Math.round(count/maxCount*100)}%;background:${colors[i%colors.length]}">${count}</div></div><span class="salary-val">${count}</span></div>`
+    ).join('');
+    if(anD)anD.textContent=Object.keys(deptCounts).length;
+  } else if(deptEl) {
+    deptEl.innerHTML='<div style="text-align:center;padding:32px;color:var(--text-muted);font-size:13px">Add employees to see department breakdown.</div>';
+  }
+  // Self-service portal update
+  updatePortalData(emps);
+}
+function isToday(leave) {
+  if (!leave.from || !leave.to) return false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const from = new Date(leave.from); const to = new Date(leave.to);
+  return from <= today && to >= today;
+}
+
+// ── SELF-SERVICE PORTAL — load logged-in user's employee record ──
+function updatePortalData(emps) {
+  const user = window._currentUser;
+  if (!user) return;
+  // Match employee by email
+  const emp = emps.find(e => e.email && e.email.toLowerCase() === user.email?.toLowerCase());
+  const nameEl=document.getElementById('portal-user-name'), metaEl=document.getElementById('portal-user-meta');
+  const avEl=document.getElementById('portal-avatar'), jEl=document.getElementById('portal-user-joined');
+  const statusEl=document.getElementById('portal-user-status');
+  if (emp) {
+    if(nameEl)nameEl.textContent=emp.n||user.displayName||user.email;
+    if(metaEl)metaEl.textContent=[emp.id,emp.desg,emp.d].filter(Boolean).join(' · ');
+    if(avEl)avEl.textContent=emp.i||((emp.n||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase());
+    if(jEl)jEl.textContent=emp.j?'Joined '+emp.j:'—';
+    if(statusEl)statusEl.textContent=emp.s||'Active';
+    // Leave balance
+    const myLeaves = (window.leaveData||[]).filter(l=>l.uid===user.uid||l.empName===emp.n);
+    const usedCL = myLeaves.filter(l=>l.type==='Casual Leave'&&l.status==='Approved').length;
+    const usedSL = myLeaves.filter(l=>l.type==='Sick Leave'&&l.status==='Approved').length;
+    const usedEL = myLeaves.filter(l=>l.type==='Earned Leave'&&l.status==='Approved').length;
+    const lb = document.getElementById('portal-leave-balance');
+    if(lb)lb.innerHTML=`<div class="pay-row"><span class="pay-label">Casual Leave</span><span class="pay-val pos">${12-usedCL} days left</span></div>
+      <div class="pay-row"><span class="pay-label">Sick Leave</span><span class="pay-val pos">${10-usedSL} days left</span></div>
+      <div class="pay-row"><span class="pay-label">Earned Leave</span><span class="pay-val pos">${15-usedEL} days left</span></div>
+      <div class="pay-row"><span class="pay-label">Used this year</span><span class="pay-val">${usedCL+usedSL+usedEL} days</span></div>`;
+    const ld=document.getElementById('portal-leave-desc');
+    if(ld)ld.textContent=`${12-usedCL} casual · ${15-usedEL} earned days left`;
+    // Payroll select
+    const ps = document.getElementById('payroll-emp-select');
+    if (ps) {
+      // Pre-select this employee
+      [...ps.options].forEach(o => { if(o.value===emp._id) o.selected=true; });
+    }
+  } else {
+    if(nameEl)nameEl.textContent=user.displayName||user.email||'—';
+    if(metaEl)metaEl.textContent='Employee record not linked. Ask HR to add your profile.';
+    if(avEl)avEl.textContent=(user.email||'?').slice(0,2).toUpperCase();
+  }
+}
+
+// ── PAYROLL ──
+function loadPayslipPreview() {
+  const sel = document.getElementById('payroll-emp-select');
+  if (!sel || !sel.value) return;
+  const emp = (window.empData||[]).find(e=>e._id===sel.value);
+  const previewSec = document.getElementById('payslip-preview-section');
+  const emptyEl = document.getElementById('payroll-emp-empty');
+  if (!emp) { if(previewSec)previewSec.style.display='none'; if(emptyEl)emptyEl.style.display='block'; return; }
+  if(previewSec)previewSec.style.display='block';
+  if(emptyEl)emptyEl.style.display='none';
+  const n=document.getElementById('ps-name'),i=document.getElementById('ps-id'),d=document.getElementById('ps-desg'),dept=document.getElementById('ps-dept');
+  if(n)n.textContent=emp.n||'—'; if(i)i.textContent=emp.id||'—'; if(d)d.textContent=emp.desg||'—'; if(dept)dept.textContent=emp.d||'—';
+}
+function previewPayslipCalc() {
+  const basic=Number(document.getElementById('ps-basic')?.value||0);
+  const da=Number(document.getElementById('ps-da')?.value||0);
+  const hra=Number(document.getElementById('ps-hra')?.value||0);
+  const special=Number(document.getElementById('ps-special')?.value||0);
+  const pf=Number(document.getElementById('ps-pf')?.value||0);
+  const ptax=Number(document.getElementById('ps-ptax')?.value||0);
+  const gross=basic+da+hra+special;
+  const deductions=pf+ptax;
+  const net=gross-deductions;
+  const pv=document.getElementById('payslip-calc-preview');
+  if(pv)pv.style.display='block';
+  const pg=document.getElementById('ps-gross'),pd=document.getElementById('ps-deductions'),pn=document.getElementById('ps-net');
+  if(pg)pg.textContent='₹'+gross.toLocaleString('en-IN');
+  if(pd)pd.textContent='− ₹'+deductions.toLocaleString('en-IN');
+  if(pn)pn.textContent='₹'+net.toLocaleString('en-IN');
+}
+function generatePayrollPDF() {
+  // Sync payroll panel values to documents panel fields then generate
+  const sel=document.getElementById('payroll-emp-select');
+  const emp=(window.empData||[]).find(e=>e._id===sel?.value);
+  if (!emp) { showToast('Select an employee first','error'); return; }
+  const nameField=document.getElementById('pdf-emp-name'), idField=document.getElementById('pdf-emp-id');
+  const desgField=document.getElementById('pdf-desg'), deptField=document.getElementById('pdf-dept');
+  const basicField=document.getElementById('pdf-basic'), daField=document.getElementById('pdf-da');
+  const hraField=document.getElementById('pdf-hra'), spField=document.getElementById('pdf-special');
+  const pfField=document.getElementById('pdf-pf'), ptaxField=document.getElementById('pdf-ptax');
+  if(nameField)nameField.value=emp.n||''; if(idField)idField.value=emp.id||'';
+  if(desgField)desgField.value=emp.desg||''; if(deptField)deptField.value=emp.d||'';
+  if(basicField)basicField.value=document.getElementById('ps-basic')?.value||'';
+  if(daField)daField.value=document.getElementById('ps-da')?.value||'';
+  if(hraField)hraField.value=document.getElementById('ps-hra')?.value||'';
+  if(spField)spField.value=document.getElementById('ps-special')?.value||'';
+  if(pfField)pfField.value=document.getElementById('ps-pf')?.value||'';
+  if(ptaxField)ptaxField.value=document.getElementById('ps-ptax')?.value||'';
+  auditLog('PAYROLL_VIEW', { empId: emp.id, empName: emp.n });
+  generatePDF('payslip');
+}
+
+// ── MODAL OPENERS for new panels ──
+function openNoticeModal() {
+  if (!rbacHas('canAddEmployee')) { showToast('⛔ Only HR Managers can post announcements.','error'); return; }
+  const title = prompt('Announcement Title:');
+  if (!title) return;
+  const body = prompt('Announcement Details:');
+  if (body === null) return;
+  if (!window.firestoreAddNotice) { showToast('Firestore not ready.','error'); return; }
+  window.firestoreAddNotice({ title, body, postedBy: window._currentUser?.email||'HR', role: window._userRole })
+    .then(() => { showToast('Announcement posted!','success'); auditLog('NOTICE_POST',{title}); })
+    .catch(e => showToast('Error: '+e.message,'error'));
+}
+
+function openJobModal(editId) {
+  if (!rbacHas('canViewRecruitment')) { showToast('⛔ Permission denied.','error'); return; }
+  const title = prompt('Job Title:', editId ? (window.jobData||[]).find(j=>j._id===editId)?.title||'' : '');
+  if (!title) return;
+  const dept  = prompt('Department:', '');
+  const loc   = prompt('Location (e.g. Hyderabad / Remote):', 'Hyderabad');
+  const salary= prompt('Salary Range (e.g. ₹10–15 LPA):', '');
+  const tags  = prompt('Skills/Tags (comma separated):', '');
+  const stage = 'Screening';
+  if (editId && window.firestoreUpdateJob) {
+    window.firestoreUpdateJob(editId, {title,department:dept,location:loc,salary,tags,stage}).then(()=>showToast('Job updated!','success')).catch(e=>showToast('Error: '+e.message,'error'));
+  } else if (window.firestoreAddJob) {
+    window.firestoreAddJob({title,department:dept||'General',location:loc,salary,tags,stage,applied:0,shortlisted:0}).then(()=>showToast('Job posted!','success')).catch(e=>showToast('Error: '+e.message,'error'));
+  }
+}
+
+function openOkrModal() {
+  if (!rbacHas('canViewPerformance') && !rbacHas('canAddEmployee')) { showToast('⛔ Permission denied.','error'); return; }
+  const objective = prompt('Objective:');
+  if (!objective) return;
+  const dept = prompt('Department:', '');
+  const kr1label = prompt('Key Result 1 label:', '');
+  const kr1pct = Number(prompt('KR1 Progress % (0-100):', '0')||0);
+  const keyResults = kr1label ? [{label:kr1label, pct:kr1pct}] : [];
+  const progress = kr1pct;
+  if (!window.firestoreAddOKR) { showToast('Firestore not ready.','error'); return; }
+  window.firestoreAddOKR({objective, department:dept, keyResults, progress}).then(()=>showToast('Objective added!','success')).catch(e=>showToast('Error: '+e.message,'error'));
+}
+
+function openKpiModal() {
+  if (!rbacHas('canGeneratePerfReview')) { showToast('⛔ Permission denied.','error'); return; }
+  const sel = document.getElementById('payroll-emp-select');
+  // Let HR pick employee by name
+  const empName = prompt('Employee Name:');
+  if (!empName) return;
+  const dept = prompt('Department:', '');
+  const score = Number(prompt('KPI Score (0-100):', '80')||80);
+  const signal = score < 60 ? prompt('Risk Signal (e.g. Low attendance, Frequent complaints):', 'Low KPI score') : '';
+  if (!window.firestoreAddKPI) { showToast('Firestore not ready.','error'); return; }
+  window.firestoreAddKPI({empName, department:dept, score, signal}).then(()=>showToast('KPI entry added!','success')).catch(e=>showToast('Error: '+e.message,'error'));
+}
+
+// Call analytics update whenever employees change
+const _origRenderEmp = window.renderEmp;
+// ===========================
+// DASHBOARD LIVE UPDATE
+// ===========================
+function updateDashboard() {
+  const emps   = window.empData    || [];
+  const leaves = window.leaveData  || [];
+  const tickets= window.ticketData || [];
+  const jobs   = window.jobData    || [];
+  const expenses = window.expenseData || [];
+
+  // Stats cards
+  const setEl = (id, val) => { const e = document.getElementById(id); if(e) e.textContent = val; };
+  setEl('dash-total-emp', emps.length || '—');
+  setEl('dash-emp-change', emps.length ? emps.length + ' employees' : 'Add employees to get started');
+  setEl('dash-leave-total', leaves.length || '—');
+  setEl('dash-leave-pending', leaves.filter(l => l.status === 'Pending').length + ' pending');
+  const openTickets = (tickets).filter(t => !t.status || t.status === 'Open').length;
+  setEl('dash-tickets', openTickets || '—');
+  setEl('dash-tickets-sub', openTickets ? openTickets + ' open' : 'No open tickets');
+  const openJobs = (jobs).filter(j => j.stage !== 'Closed').length;
+  setEl('dash-jobs', openJobs || '—');
+  setEl('dash-jobs-sub', openJobs ? openJobs + ' open positions' : 'No job openings');
+
+  // Glance
+  setEl('glance-emp', emps.length || '—');
+  setEl('glance-leaves', leaves.length || '—');
+  setEl('glance-pending', leaves.filter(l => l.status === 'Pending').length || '—');
+  setEl('glance-tickets', openTickets || '—');
+  setEl('glance-expenses', (expenses).filter(e => e.status === 'Pending').length || '—');
+
+  // Department headcount bars
+  const deptEl = document.getElementById('dash-dept-bars');
+  if (deptEl) {
+    if (!emps.length) {
+      deptEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:20px;text-align:center">Add employees to see department breakdown.</div>';
+    } else {
+      const depts = {};
+      emps.forEach(e => { const d = e.d || e.dept || 'Unknown'; depts[d] = (depts[d] || 0) + 1; });
+      const max = Math.max(...Object.values(depts));
+      const colors = ['var(--accent2)', 'var(--blue)', 'var(--purple)', 'var(--gold)', 'var(--coral)'];
+      deptEl.innerHTML = Object.entries(depts).map(([d,c], i) =>
+        `<div class="salary-bar-row">
+          <div class="salary-dept">${d}</div>
+          <div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:${Math.round(c/max*100)}%;background:${colors[i%colors.length]}">${c}</div></div>
+          <div class="salary-val">${c}</div>
+        </div>`
+      ).join('');
+    }
+  }
+
+  // Leave status breakdown bars
+  const leaveBarEl = document.getElementById('dash-leave-bars');
+  if (leaveBarEl) {
+    if (!leaves.length) {
+      leaveBarEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:20px;text-align:center">No leave data yet.</div>';
+    } else {
+      const approved = leaves.filter(l=>l.status==='Approved').length;
+      const pending  = leaves.filter(l=>l.status==='Pending').length;
+      const rejected = leaves.filter(l=>l.status==='Rejected').length;
+      const total    = leaves.length;
+      leaveBarEl.innerHTML = [
+        ['Approved', approved, 'var(--accent2)'],
+        ['Pending',  pending,  'var(--gold)'],
+        ['Rejected', rejected, 'var(--coral)'],
+      ].map(([label, count, color]) =>
+        `<div class="salary-bar-row">
+          <div class="salary-dept">${label}</div>
+          <div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:${total?Math.round(count/total*100):0}%;background:${color}">${count}</div></div>
+          <div class="salary-val">${count}</div>
+        </div>`
+      ).join('');
+    }
+  }
+
+  // Activity feed — last 5 actions from audit buffer
+  const actEl = document.getElementById('activity-feed');
+  if (actEl) {
+    if (!_auditBuffer.length) {
+      actEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:20px;text-align:center">No activity yet. Actions will appear here.</div>';
+    } else {
+      const icons = { LOGIN:'🔑', EMP_ADD:'➕', EMP_EDIT:'✏️', EMP_DELETE:'🗑️', LEAVE_APPROVE:'✅', LEAVE_DENY:'❌', CAL_EVENT_ADD:'📅', AI_CALL:'🤖', NAV:'🧭', DEFAULT:'📋' };
+      actEl.innerHTML = [..._auditBuffer].reverse().slice(0, 8).map(e => {
+        const icon = icons[e.action] || icons.DEFAULT;
+        return `<div class="audit-row" style="border-bottom:1px solid var(--border)">
+          <div class="audit-icon">${icon}</div>
+          <div class="audit-info">
+            <div class="audit-action" style="font-size:12px">${e.action.replace(/_/g,' ')} — ${e.user}</div>
+            <div class="audit-meta">${new Date(e.timestamp).toLocaleTimeString('en-IN')}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+  }
+}
+
+// ===========================
+// PAYROLL STATS FROM FIRESTORE
+// ===========================
+function updatePayrollStats(payroll) {
+  const emps = window.empData || [];
+  let gross = 0, tds = 0;
+  payroll.forEach(p => {
+    gross += Number(p.gross || p.basic || 0);
+    tds   += Number(p.tds || 0);
+  });
+  const net = gross - tds;
+  const setEl = (id, val) => { const e = document.getElementById(id); if(e) e.textContent = val; };
+  const inr = v => '₹' + Number(v).toLocaleString('en-IN');
+  setEl('pay-stat-gross', gross ? inr(gross) : '—');
+  setEl('pay-stat-net',   net   ? inr(net)   : '—');
+  setEl('pay-stat-tds',   tds   ? inr(tds)   : '—');
+  setEl('pay-stat-count', emps.length || '—');
+  setEl('pay-stat-status', payroll.length ? payroll.length + ' records' : 'No payroll records yet');
+
+  // Dept payroll chart
+  const chartEl = document.getElementById('payroll-dept-chart');
+  if (chartEl) {
+    const depts = {};
+    emps.forEach(emp => {
+      const rec = payroll.find(p => p.empId === emp.id || p.empName === emp.n);
+      const dept = emp.d || emp.dept || 'Unknown';
+      depts[dept] = (depts[dept] || 0) + (rec ? Number(rec.gross || rec.basic || 0) : 0);
+    });
+    const max = Math.max(...Object.values(depts), 1);
+    if (!Object.values(depts).some(v => v > 0)) {
+      chartEl.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-muted);font-size:13px">Add employees and generate payslips to see department payroll distribution.</div>';
+    } else {
+      const colors = ['var(--accent2)','var(--blue)','var(--purple)','var(--gold)','var(--coral)'];
+      chartEl.innerHTML = Object.entries(depts).map(([d,v], i) =>
+        `<div class="salary-bar-row">
+          <div class="salary-dept">${d}</div>
+          <div class="salary-bar-wrap"><div class="salary-bar-fill" style="width:${Math.round(v/max*100)}%;background:${colors[i%colors.length]}">₹${(v/1000).toFixed(0)}K</div></div>
+          <div class="salary-val" style="font-size:11px">₹${(v/1000).toFixed(1)}K</div>
+        </div>`).join('');
+    }
+  }
+}
+
+// ===========================
+// CALENDAR EVENTS LIST (right panel)
+// ===========================
+function renderEventsList() {
+  const el = document.getElementById('events-list');
+  if (!el) return;
+  const now = new Date();
+  const upcoming = calEvents
+    .filter(e => new Date(e.date) >= now)
+    .sort((a,b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 8);
+  if (!upcoming.length) {
+    el.innerHTML = '<div style="padding:20px;color:var(--text-muted);font-size:12px;text-align:center">No upcoming events. Add one using the button above.</div>';
+    return;
+  }
+  const typeColors = { Interview:'var(--blue)', Reminder:'var(--gold)', Holiday:'var(--coral)', Meeting:'var(--purple)', Event:'var(--accent2)' };
+  el.innerHTML = upcoming.map(ev => {
+    const d = new Date(ev.date);
+    const color = typeColors[ev.type] || 'var(--accent2)';
+    const del = ev._id && window.firestoreDeleteCalEvent
+      ? `<button onclick="deleteCalEvent('${ev._id}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;padding:2px 6px">✕</button>` : '';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--border)">
+      <div style="min-width:36px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:${color}">${d.getDate()}</div>
+        <div style="font-size:10px;color:var(--text-muted)">${d.toLocaleString('default',{month:'short'})}</div>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:600">${ev.title}</div>
+        <div style="font-size:10px;color:${color}">${ev.type || 'Event'}</div>
+      </div>
+      ${del}
+    </div>`;
+  }).join('');
+}
+
+async function deleteCalEvent(id) {
+  if (!rbacHas('canAddEmployee')) { showToast('⛔ Only HR Managers can delete calendar events.','error'); return; }
+  try { await window.firestoreDeleteCalEvent(id); showToast('Event deleted','info'); } catch(e) { showToast('Error: '+e.message,'error'); }
+}
+
+// ===========================
+// DOCUMENT VAULT RENDER
+// ===========================
+function renderDocVault(docs) {
+  const grid = document.getElementById('vault-grid');
+  const empty = document.getElementById('vault-empty');
+  const expTbody = document.getElementById('vault-expiry-tbody');
+  if (!grid) return;
+
+  const uploadCard = `<div class="vault-card" onclick="showToast('Upload feature active with Firebase Storage','info')"><div class="vault-icon">⬆️</div><div class="vault-name">Upload Document</div><div class="vault-size">Click to upload</div></div>`;
+  if (!docs || !docs.length) {
+    grid.innerHTML = uploadCard;
+    if (empty) empty.style.display = 'block';
+    if (expTbody) { expTbody.innerHTML = ''; document.getElementById('vault-expiry-empty').style.display = 'block'; }
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  grid.innerHTML = uploadCard + docs.map(d =>
+    `<div class="vault-card">
+      <div class="vault-icon">${d.type === 'PDF' ? '📄' : d.type === 'Image' ? '🖼️' : '📎'}</div>
+      <div class="vault-name">${d.name || 'Document'}</div>
+      <div class="vault-size">${d.empName || ''} · ${d.docType || 'General'}</div>
+    </div>`
+  ).join('');
+
+  // Expiry alerts
+  const withExpiry = docs.filter(d => d.expiry);
+  if (expTbody) {
+    if (!withExpiry.length) {
+      expTbody.innerHTML = '';
+      document.getElementById('vault-expiry-empty').style.display = 'block';
+    } else {
+      document.getElementById('vault-expiry-empty').style.display = 'none';
+      expTbody.innerHTML = withExpiry.map(d => {
+        const exp = new Date(d.expiry);
+        const daysLeft = Math.ceil((exp - new Date()) / 86400000);
+        const statusClass = daysLeft < 0 ? 'pill-r' : daysLeft < 30 ? 'pill-o' : 'pill-g';
+        const statusLabel = daysLeft < 0 ? 'Expired' : daysLeft < 30 ? 'Expiring Soon' : 'Valid';
+        return `<tr><td>${d.empName || '—'}</td><td>${d.docType || d.name}</td><td>${exp.toLocaleDateString('en-IN')}</td><td><span class="pill ${statusClass}">${statusLabel}</span></td></tr>`;
+      }).join('');
+    }
   }
 }
 

@@ -13,7 +13,7 @@
   import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-analytics.js";
   import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updateProfile }
     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
-  import { getFirestore, collection, doc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy }
+  import { getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy }
     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -41,7 +41,7 @@
   window._firebaseAnalytics = analytics;
   window._firebaseFn = {
     signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updateProfile,
-    collection, doc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy,
+    collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy,
     logEvent
   };
 
@@ -68,9 +68,9 @@
       (async () => {
         let detectedRole = rbacGetStoredRole();
         try {
-          const roleSnap = await getDocs(query(collection(db, 'userRoles'), where('uid', '==', user.uid)));
-          if (!roleSnap.empty) {
-            detectedRole = roleSnap.docs[0].data().role || detectedRole;
+          const roleSnap = await getDoc(doc(db, 'userRoles', user.uid));
+          if (roleSnap.exists()) {
+            detectedRole = roleSnap.data().role || detectedRole;
           } else {
             detectedRole = detectRoleFromEmail(user.email);
           }
@@ -605,10 +605,13 @@ service cloud.firestore {
       allow update, delete: if false;  // Tamper-proof
     }
 
-    // User roles — only super admin can write
+    // User roles — a signed-in user may create ONLY their own role doc (id == their uid),
+    // which is what lets self-registration bootstrap a role. They can never edit/delete it
+    // afterward — only an existing super admin can change someone's role after that.
     match /userRoles/{uid} {
       allow read:   if isSignedIn() && (isSuperAdmin() || isOwner(uid));
-      allow write:  if isSuperAdmin();
+      allow create: if isOwner(uid);
+      allow update, delete: if isSuperAdmin();
     }
 
     // Documents vault
@@ -1950,7 +1953,8 @@ service cloud.firestore {
     }
     match /userRoles/{uid} {
       allow read:   if isSignedIn() &amp;&amp; (isSuperAdmin() || isOwner(uid));
-      allow write:  if isSuperAdmin();
+      allow create: if isOwner(uid);
+      allow update, delete: if isSuperAdmin();
     }
   }
 }</pre>
@@ -2312,8 +2316,8 @@ async function handleRegister() {
     // Assign role from email, persist to Firestore so future logins read it instantly
     const assignedRole = detectRoleFromEmail(email);
     try {
-      const { addDoc, collection, serverTimestamp } = window._firebaseFn;
-      await addDoc(collection(window._firebaseDB, 'userRoles'), {
+      const { setDoc, doc, serverTimestamp } = window._firebaseFn;
+      await setDoc(doc(window._firebaseDB, 'userRoles', cred.user.uid), {
         uid:        cred.user.uid,
         email:      email,
         role:       assignedRole,

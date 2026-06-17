@@ -2422,6 +2422,8 @@ function renderEmp(data) {
   document.getElementById('emp-count-badge').textContent = data.length + ' total';
   // Keep document form selector in sync
   if (typeof refreshDocEmpList === 'function') refreshDocEmpList();
+  // Keep payroll employee selector in sync
+  if (typeof refreshPayrollEmpList === 'function') refreshPayrollEmpList();
 }
 function filterEmployees(q) {
   const f = window.empData.filter(e => (e.n+e.d+e.desg+e.id).toLowerCase().includes(q.toLowerCase()));
@@ -2502,45 +2504,9 @@ async function deleteEmployee(i) {
 // ===========================
 // LEAVE
 // ===========================
-// All leave data loaded exclusively from Firestore
-Object.defineProperty(window, 'leaveData', { get(){ return window._leaveData||[]; }, set(v){ window._leaveData=v; renderLeaves(v); updateLeaveStats(v); } });
+// All leave data loaded exclusively from Firestore — rendering is handled by
+// renderLeaves()/updateLeaveStats() (driven by the Firestore onSnapshot listener).
 window.leaveData = [];
-const leaveData = window.leaveData;
-
-function leavePill(s) { return s==='approved'?'pill-g':s==='rejected'?'pill-r':'pill-o'; }
-function renderLeave() {
-  const data = window.leaveData;
-  if (!data.length) {
-    document.getElementById('leave-tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:32px;font-size:13px">No leave requests yet. Employees can apply via My Portal → Apply Leave.</td></tr>';
-    return;
-  }
-  document.getElementById('leave-tbody').innerHTML = data.map((l,i) => `
-    <tr>
-      <td>${l.e||l.employee||''}</td><td>${l.t||l.type||''}</td>
-      <td>${l.f||l.from||''}</td><td>${l.to||''}</td><td>${l.d||1}</td>
-      <td style="color:var(--text-muted);font-size:12px">${l.r||l.reason||''}</td>
-      <td><span class="pill ${leavePill(l.s||l.status)}" id="ls-${i}">${(l.s||l.status||'pending').charAt(0).toUpperCase()+(l.s||l.status||'pending').slice(1)}</span></td>
-      <td id="la-${i}" style="padding:10px 12px">
-        ${(l.s||l.status)==='pending'?`<span style="display:flex;gap:6px">
-          <button style="background:rgba(29,158,117,0.2);border:none;color:var(--accent2);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer" onclick="actLeave(${i},'approved')">✓ Approve</button>
-          <button style="background:rgba(226,75,74,0.2);border:none;color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer" onclick="actLeave(${i},'rejected')">✗ Reject</button>
-          </span>`:'—'}
-      </td>
-    </tr>`).join('');
-}
-
-function actLeave(i, action) {
-  leaveData[i].s = action;
-  renderLeave();
-  // Persist to Firestore if record has _id
-  const rec = leaveData[i];
-  if (rec._id && window._firebaseFn && window._firebaseDB) {
-    const { doc: fsDoc, updateDoc } = window._firebaseFn;
-    updateDoc(fsDoc(window._firebaseDB, 'leaves', rec._id), {status: action}).catch(()=>{});
-  }
-  showToast(`Leave ${action} for ${leaveData[i].e}`, action==='approved'?'success':'info');
-  sendNotification(leaveData[i].e, `Your leave request has been ${action}.`);
-}
 
 function openLeaveModal() { document.getElementById('leave-modal').classList.add('open'); }
 async function submitLeave() {
@@ -2550,18 +2516,13 @@ async function submitLeave() {
   const reason = document.getElementById('lv-reason').value;
   if (!from || !reason) { showToast('Please fill all required fields','error'); return; }
   const empName = window._currentUser?.displayName || window._currentUser?.email?.split('@')[0] || 'You';
-  const newLeave = {e: empName, t:type, f:from, to:to||from, d:1, r:reason, s:'pending'};
-  leaveData.push(newLeave);
-  // Save to Firestore
-  if (window.firestoreAddLeave) {
-    try {
-      const ref = await window.firestoreAddLeave({
-        employee: empName, type, from, to: to||from, reason, status: 'pending'
-      });
-      newLeave._id = ref.id;
-    } catch(e) {}
-  }
-  renderLeave();
+  if (!window.firestoreAddLeave) { showToast('Firestore not ready.','error'); return; }
+  try {
+    // Field names/status casing must match what renderLeaves()/updateLeaveStats() expect
+    await window.firestoreAddLeave({
+      empName, uid: window._currentUser?.uid || '', type, from, to: to||from, reason, status: 'Pending'
+    });
+  } catch(e) { showToast('Error submitting leave: ' + e.message, 'error'); return; }
   closeModal('leave-modal');
   showToast('Leave request submitted!', 'success');
 }
@@ -3444,6 +3405,26 @@ function prefillDocFromSelect() {
   if (!emp) return;
   if (window.prefillDocFormsFromEmployee) window.prefillDocFormsFromEmployee(emp);
   showToast(`Loaded ${emp.n || emp.name || 'employee'}'s data`, 'success');
+}
+
+// ===========================
+// PAYROLL FORM - EMPLOYEE SELECTOR
+// ===========================
+function refreshPayrollEmpList() {
+  const sel = document.getElementById('payroll-emp-select');
+  if (!sel) return;
+  const prevValue = sel.value;
+  sel.innerHTML = '<option value="">— Select an employee —</option>';
+  (window.empData || []).forEach(emp => {
+    const opt = document.createElement('option');
+    opt.value = emp._id || '';
+    opt.textContent = `${emp.n || emp.name || ''} (${emp.id || emp.empId || ''}) — ${emp.d || emp.department || ''}`;
+    sel.appendChild(opt);
+  });
+  // Preserve the previous selection if that employee is still in the list
+  if (prevValue && [...sel.options].some(o => o.value === prevValue)) {
+    sel.value = prevValue;
+  }
 }
 
 // ===========================

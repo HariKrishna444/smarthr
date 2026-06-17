@@ -11,7 +11,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
   import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-analytics.js";
-  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updateProfile }
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail }
     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
   import { getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy }
     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
@@ -40,7 +40,7 @@
   window._firebaseDB = db;
   window._firebaseAnalytics = analytics;
   window._firebaseFn = {
-    signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updateProfile,
+    signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail,
     collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy,
     logEvent
   };
@@ -57,11 +57,9 @@
       const _pav2 = document.getElementById('portal-avatar'); if(_pav2)_pav2.textContent=_ini2;
       document.getElementById('sidebar-user-name').textContent = displayName;
       document.getElementById('portal-user-name').textContent = displayName;
-      // Reset login/register buttons
+      // Reset login button
       const lb = document.querySelector('#tab-login .btn-primary');
-      const rb = document.querySelector('#tab-register .btn-primary');
       if (lb) { lb.disabled = false; lb.textContent = 'Sign In to SmartHR'; }
-      if (rb) { rb.disabled = false; rb.textContent = 'Create Account'; }
       // Log login event
       logEvent(analytics, 'login', { method: 'email' });
       // Auto-detect role: check Firestore userRoles first, fall back to email pattern
@@ -704,12 +702,6 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 }
 .login-title { font-size: 20px; font-weight: 700; }
 .login-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.login-tabs { display: flex; gap: 4px; margin-bottom: 24px; background: rgba(255,255,255,0.05); border-radius: 9px; padding: 4px; }
-.login-tab {
-  flex: 1; text-align: center; padding: 8px; border-radius: 7px;
-  font-size: 13px; cursor: pointer; color: var(--text-muted); transition: all 0.15s;
-}
-.login-tab.active { background: var(--navy); color: #fff; font-weight: 600; }
 .form-group { margin-bottom: 16px; }
 .form-label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; display: block; }
 .form-input {
@@ -1131,10 +1123,6 @@ function showToast(msg, type='info') {
         <div class="login-sub">AI-POWERED HR PORTAL v2</div>
       </div>
     </div>
-    <div class="login-tabs">
-      <div class="login-tab active" onclick="switchLoginTab('login')">Sign In</div>
-      <div class="login-tab" onclick="switchLoginTab('register')">Register</div>
-    </div>
     <!-- Sign In -->
     <div id="tab-login">
       <div class="form-group">
@@ -1152,32 +1140,30 @@ function showToast(msg, type='info') {
       </div>
       <button class="btn-primary" onclick="handleLogin()">Sign In to SmartHR</button>
       <div class="login-error" id="login-error"></div>
-    </div>
-    <!-- Register -->
-    <div id="tab-register" style="display:none">
-      <div class="form-group">
-        <label class="form-label">Full Name *</label>
-        <input class="form-input" id="reg-name" type="text" placeholder="e.g. Harikrishna A" />
+      <div style="text-align:center;margin-top:14px">
+        <a href="#" onclick="toggleForgotPassword();return false" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">Forgot password?</a>
       </div>
-      <div class="form-group">
-        <label class="form-label">Work Email *</label>
-        <input class="form-input" id="reg-email" type="email" placeholder="you@suh.edu.in"
-          oninput="previewRegisterRole(this.value)" />
-      </div>
-      <div id="reg-role-preview" style="display:none;margin-bottom:14px;padding:9px 13px;border-radius:8px;background:rgba(55,138,221,0.10);border:1px solid rgba(55,138,221,0.22);font-size:12px;color:var(--blue)">
-        🎭 Role will be assigned: <strong id="reg-role-label">—</strong><br>
-        <span style="color:var(--text-muted);font-size:11px;margin-top:3px;display:block">Based on your email domain.</span>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Password * <span style="color:var(--text-muted)">(min 6 chars)</span></label>
-        <input class="form-input" id="reg-password" type="password" placeholder="Min 6 characters"
-          onkeydown="if(event.key==='Enter')handleRegister()" />
-      </div>
-      <button class="btn-primary" onclick="handleRegister()">Create Account</button>
-      <div class="login-error" id="reg-error"></div>
       <div style="font-size:11px;color:var(--text-muted);text-align:center;margin-top:14px;line-height:1.6">
-        Role is auto-assigned from your email domain.<br>
-        <strong style="color:var(--accent2)">@suh.edu.in</strong> → 👑 Super Admin
+        Don't have an account? Contact HR/Admin — accounts are created for you,<br>not self-registered.
+      </div>
+    </div>
+    <!-- Forgot Password -->
+    <div id="tab-forgot" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Email Address</label>
+        <input class="form-input" id="forgot-email" type="email" placeholder="you@suh.edu.in"
+          onkeydown="if(event.key==='Enter')handleForgotPassword()" />
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;line-height:1.6">
+        We'll email you a link to reset your password.
+      </div>
+      <button class="btn-primary" onclick="handleForgotPassword()">Send Reset Link</button>
+      <div class="login-error" id="forgot-error"></div>
+      <div id="forgot-success" style="display:none;margin-top:12px;padding:9px 13px;border-radius:8px;background:rgba(29,158,117,0.10);border:1px solid rgba(29,158,117,0.22);font-size:12px;color:var(--accent2)">
+        ✅ Reset link sent — check your inbox.
+      </div>
+      <div style="text-align:center;margin-top:14px">
+        <a href="#" onclick="toggleForgotPassword();return false" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">← Back to Sign In</a>
       </div>
     </div>
   </div>
@@ -2265,7 +2251,7 @@ function detectRoleFromEmail(email) {
   if (/^(hr|hrmanager|hrmgr|humanresource)/.test(username))   return 'hr_manager';
   if (/^(payroll|salary|accounts|finance)/.test(username))    return 'payroll_admin';
   if (/^(recruit|talent|hiring|ta\.)/.test(username))         return 'recruiter';
-  if (/^(manager|mgr|hod|lead|head\.)/.test(username))        return 'manager';
+  if (/^(manager|mgr|hod|head|director|lead)/.test(username)) return 'manager';
 
   // ── 3. DEFAULT ──
   return 'employee';
@@ -2275,18 +2261,6 @@ function detectRoleFromEmail(email) {
 function previewLoginRole(email) {
   const preview = document.getElementById('login-role-preview');
   const label   = document.getElementById('login-role-label');
-  if (!preview || !label) return;
-  if (!email || !email.includes('@')) { preview.style.display = 'none'; return; }
-  const role = detectRoleFromEmail(email);
-  const meta = ROLES[role] || ROLES.employee;
-  label.textContent     = meta.icon + ' ' + meta.label;
-  preview.style.display = 'block';
-}
-
-// Show role badge as user types email on Register
-function previewRegisterRole(email) {
-  const preview = document.getElementById('reg-role-preview');
-  const label   = document.getElementById('reg-role-label');
   if (!preview || !label) return;
   if (!email || !email.includes('@')) { preview.style.display = 'none'; return; }
   const role = detectRoleFromEmail(email);
@@ -2312,43 +2286,21 @@ async function handleLogin() {
   }
 }
 
-async function handleRegister() {
-  const name     = document.getElementById('reg-name').value.trim();
-  const email    = document.getElementById('reg-email').value.trim();
-  const password = document.getElementById('reg-password').value;
-  const btn      = document.querySelector('#tab-register .btn-primary');
-  const err      = document.getElementById('reg-error');
-  err.style.display = 'none';
-  if (!name || !email || !password) { err.textContent = 'All fields are required.'; err.style.display = 'block'; return; }
-  if (password.length < 6) { err.textContent = 'Password must be at least 6 characters.'; err.style.display = 'block'; return; }
-  btn.disabled = true; btn.textContent = 'Creating account…';
+async function handleForgotPassword() {
+  const email = document.getElementById('forgot-email').value.trim();
+  const err   = document.getElementById('forgot-error');
+  const ok    = document.getElementById('forgot-success');
+  const btn   = document.querySelector('#tab-forgot .btn-primary');
+  err.style.display = 'none'; ok.style.display = 'none';
+  if (!email) { err.textContent = 'Please enter your email address.'; err.style.display = 'block'; return; }
+  btn.disabled = true; btn.textContent = 'Sending…';
   try {
-    const cred = await window._firebaseFn.createUserWithEmailAndPassword(window._firebaseAuth, email, password);
-    await window._firebaseFn.updateProfile(cred.user, { displayName: name });
-
-    // Assign role from email, persist to Firestore so future logins read it instantly
-    const assignedRole = detectRoleFromEmail(email);
-    try {
-      const { setDoc, doc, serverTimestamp } = window._firebaseFn;
-      await setDoc(doc(window._firebaseDB, 'userRoles', cred.user.uid), {
-        uid:        cred.user.uid,
-        email:      email,
-        role:       assignedRole,
-        name:       name,
-        assignedAt: serverTimestamp(),
-        assignedBy: 'auto-registration'
-      });
-    } catch(fsErr) {
-      // Firestore write failed — role still detected from email on each login
-      console.warn('userRoles Firestore write failed:', fsErr.message);
-    }
-
-    const meta = ROLES[assignedRole] || ROLES.employee;
-    showToast(`Welcome, ${name}! Role: ${meta.icon} ${meta.label}`, 'success');
-    // onAuthStateChanged handles UI
+    await window._firebaseFn.sendPasswordResetEmail(window._firebaseAuth, email);
+    ok.style.display = 'block';
   } catch(e) {
     err.textContent = fbErr(e); err.style.display = 'block';
-    btn.disabled = false; btn.textContent = 'Create Account';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send Reset Link';
   }
 }
 
@@ -2358,11 +2310,11 @@ function handleLogout() {
   document.getElementById('app-shell').style.display = 'none';
 }
 
-function switchLoginTab(tab) {
-  document.getElementById('tab-login').style.display    = tab === 'login'    ? 'block' : 'none';
-  document.getElementById('tab-register').style.display = tab === 'register' ? 'block' : 'none';
-  document.querySelectorAll('.login-tab').forEach((t,i) => t.classList.toggle('active', (i===0) === (tab==='login')));
-  ['login-error','reg-error'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+function toggleForgotPassword() {
+  const onForgot = document.getElementById('tab-forgot').style.display === 'none';
+  document.getElementById('tab-login').style.display  = onForgot ? 'none' : 'block';
+  document.getElementById('tab-forgot').style.display = onForgot ? 'block' : 'none';
+  ['login-error','forgot-error','forgot-success'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
 }
 
 // ===========================

@@ -72,7 +72,20 @@
           if (roleSnap.exists()) {
             detectedRole = roleSnap.data().role || detectedRole;
           } else {
+            // No role doc yet — e.g. this account was created before the
+            // userRoles rule allowed self-create, or the write silently failed.
+            // Fall back to email-pattern detection and self-heal by creating
+            // the missing doc now, so subsequent reads/writes work correctly.
             detectedRole = detectRoleFromEmail(user.email);
+            try {
+              await setDoc(doc(db, 'userRoles', user.uid), {
+                uid: user.uid, email: user.email, role: detectedRole,
+                name: user.displayName || user.email,
+                assignedAt: serverTimestamp(), assignedBy: 'auto-heal-on-login'
+              });
+            } catch(healErr) {
+              console.warn('Could not create missing userRoles doc:', healErr.message);
+            }
           }
         } catch(e) {
           detectedRole = detectRoleFromEmail(user.email);

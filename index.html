@@ -64,25 +64,17 @@
       if (rb) { rb.disabled = false; rb.textContent = 'Create Account'; }
       // Log login event
       logEvent(analytics, 'login', { method: 'email' });
-      // Apply RBAC — read role from Firestore userRoles collection (set on registration)
-      // Falls back to sessionStorage cache, then email-pattern detection
+      // Auto-detect role: Firestore userRoles first, then email pattern
       (async () => {
-        let detectedRole = rbacGetStoredRole(); // check cache first (fast path on refresh)
+        let detectedRole = rbacGetStoredRole();
         try {
-          const roleDoc = await window._firebaseFn.getDocs(
-            window._firebaseFn.query(
-              collection(db, 'userRoles'),
-              window._firebaseFn.where('uid', '==', user.uid)
-            )
-          );
-          if (!roleDoc.empty) {
-            detectedRole = roleDoc.docs[0].data().role || detectedRole;
+          const roleSnap = await getDocs(query(collection(db, 'userRoles'), where('uid', '==', user.uid)));
+          if (!roleSnap.empty) {
+            detectedRole = roleSnap.docs[0].data().role || detectedRole;
           } else {
-            // No Firestore role yet — derive from email
             detectedRole = detectRoleFromEmail(user.email);
           }
         } catch(e) {
-          // Firestore unavailable — derive from email
           detectedRole = detectRoleFromEmail(user.email);
         }
         rbacSetRole(detectedRole);
@@ -1131,7 +1123,7 @@ function showToast(msg, type='info') {
     <div id="tab-login">
       <div class="form-group">
         <label class="form-label">Email Address</label>
-        <input class="form-input" id="login-email" type="email" placeholder="you@company.com"
+        <input class="form-input" id="login-email" type="email" placeholder="you@suh.edu.in"
           oninput="previewLoginRole(this.value)" />
       </div>
       <div class="form-group">
@@ -1139,7 +1131,7 @@ function showToast(msg, type='info') {
         <input class="form-input" id="login-password" type="password" placeholder="••••••••"
           onkeydown="if(event.key==='Enter')handleLogin()" />
       </div>
-      <!-- Auto-detected role preview — shown when email is typed -->
+      <!-- Auto-detected role preview -->
       <div id="login-role-preview" style="display:none;margin-bottom:14px;padding:9px 13px;border-radius:8px;background:rgba(29,158,117,0.10);border:1px solid rgba(29,158,117,0.22);font-size:12px;color:var(--accent2)">
         🔐 Role auto-detected: <strong id="login-role-label">—</strong>
       </div>
@@ -1150,17 +1142,17 @@ function showToast(msg, type='info') {
     <div id="tab-register" style="display:none">
       <div class="form-group">
         <label class="form-label">Full Name *</label>
-        <input class="form-input" id="reg-name" type="text" placeholder="e.g. Aarav Mehta" />
+        <input class="form-input" id="reg-name" type="text" placeholder="e.g. Harikrishna A" />
       </div>
       <div class="form-group">
         <label class="form-label">Work Email *</label>
-        <input class="form-input" id="reg-email" type="email" placeholder="you@company.com"
+        <input class="form-input" id="reg-email" type="email" placeholder="you@suh.edu.in"
           oninput="previewRegisterRole(this.value)" />
       </div>
       <!-- Auto-detected role preview -->
       <div id="reg-role-preview" style="display:none;margin-bottom:14px;padding:9px 13px;border-radius:8px;background:rgba(55,138,221,0.10);border:1px solid rgba(55,138,221,0.22);font-size:12px;color:var(--blue)">
         🎭 Role will be assigned: <strong id="reg-role-label">—</strong><br>
-        <span style="color:var(--text-muted);font-size:11px;margin-top:3px;display:block">Based on your email address. Contact your admin to change it.</span>
+        <span style="color:var(--text-muted);font-size:11px;margin-top:3px;display:block">Based on your email domain. Contact your admin to change it.</span>
       </div>
       <div class="form-group">
         <label class="form-label">Password * <span style="color:var(--text-muted)">(min 6 chars)</span></label>
@@ -1170,7 +1162,8 @@ function showToast(msg, type='info') {
       <button class="btn-primary" onclick="handleRegister()">Create Account</button>
       <div class="login-error" id="reg-error"></div>
       <div style="font-size:11px;color:var(--text-muted);text-align:center;margin-top:14px;line-height:1.5">
-        Your role is auto-assigned from your email domain.<br>Contact your Super Admin to update permissions.
+        Role is auto-assigned from your email domain.<br>
+        <strong style="color:var(--accent2)">@suh.edu.in</strong> → 👑 Super Admin
       </div>
     </div>
   </div>
@@ -2242,7 +2235,7 @@ async function handleLogin() {
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
     await window._firebaseFn.signInWithEmailAndPassword(window._firebaseAuth, email, password);
-    // onAuthStateChanged handles UI + role detection automatically
+    // onAuthStateChanged handles everything from here
   } catch(e) {
     err.textContent = fbErr(e); err.style.display = 'block';
     btn.disabled = false; btn.textContent = 'Sign In to SmartHR';
@@ -2263,26 +2256,26 @@ async function handleRegister() {
     const cred = await window._firebaseFn.createUserWithEmailAndPassword(window._firebaseAuth, email, password);
     await window._firebaseFn.updateProfile(cred.user, { displayName: name });
 
-    // Auto-assign role based on email, then persist to Firestore userRoles
+    // Auto-assign role from email, save to Firestore so future logins are instant
     const assignedRole = detectRoleFromEmail(email);
     try {
-      const db = window._firebaseDB;
       const { addDoc, collection, serverTimestamp } = window._firebaseFn;
-      await addDoc(collection(db, 'userRoles'), {
-        uid:   cred.user.uid,
-        email: email,
-        role:  assignedRole,
-        name:  name,
+      await addDoc(collection(window._firebaseDB, 'userRoles'), {
+        uid:        cred.user.uid,
+        email:      email,
+        role:       assignedRole,
+        name:       name,
         assignedAt: serverTimestamp(),
         assignedBy: 'auto-registration'
       });
     } catch(fsErr) {
-      console.warn('Could not write userRoles to Firestore:', fsErr.message);
-      // Role detection will still work from email pattern on next login
+      console.warn('userRoles write failed (Firestore rules?):', fsErr.message);
+      // Role still works from email pattern on each login
     }
 
-    showToast(`Account created! Welcome, ${name}! Role: ${ROLES[assignedRole]?.label || assignedRole}`, 'success');
-    // onAuthStateChanged handles the rest — will read role from Firestore
+    const roleMeta = ROLES[assignedRole] || ROLES.employee;
+    showToast(`Welcome, ${name}! Role assigned: ${roleMeta.icon} ${roleMeta.label}`, 'success');
+    // onAuthStateChanged handles UI + Firestore listeners
   } catch(e) {
     err.textContent = fbErr(e); err.style.display = 'block';
     btn.disabled = false; btn.textContent = 'Create Account';
@@ -2290,79 +2283,71 @@ async function handleRegister() {
 }
 
 function handleLogout() {
-  if (window.firebaseLogout) {
-    window.firebaseLogout().catch(()=>{});
-  }
+  if (window.firebaseLogout) window.firebaseLogout().catch(()=>{});
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app-shell').style.display = 'none';
 }
 
 function switchLoginTab(tab) {
-  // Remove any inline display style first so CSS takes over cleanly
-  const loginTab    = document.getElementById('tab-login');
-  const registerTab = document.getElementById('tab-register');
-  loginTab.style.display    = tab === 'login'    ? 'block' : 'none';
-  registerTab.style.display = tab === 'register' ? 'block' : 'none';
+  document.getElementById('tab-login').style.display    = tab === 'login'    ? 'block' : 'none';
+  document.getElementById('tab-register').style.display = tab === 'register' ? 'block' : 'none';
   document.querySelectorAll('.login-tab').forEach((t,i) => t.classList.toggle('active', (i===0) === (tab==='login')));
-  // Clear errors when switching tabs
-  ['login-error','reg-error'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
+  // Clear any previous errors
+  ['login-error','reg-error'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
 }
 
 // ===========================
 // ROLE AUTO-DETECTION (from email)
 // ===========================
-// Maps email patterns → RBAC roles.
-// Priority: exact email match > username keyword > domain keyword > default (employee)
-// To customise: edit the lists below or update Firestore userRoles manually.
+// Rules are checked top-to-bottom; first match wins.
+// Add your own domain/username rules here.
 function detectRoleFromEmail(email) {
   if (!email) return 'employee';
-  const lower = email.toLowerCase();
-  const [username, domain] = lower.split('@');
+  const lower    = email.toLowerCase();
+  const atIndex  = lower.indexOf('@');
+  const username = atIndex > -1 ? lower.slice(0, atIndex) : lower;
+  const domain   = atIndex > -1 ? lower.slice(atIndex + 1) : '';  // e.g. "suh.edu.in"
 
-  // 1. Exact email overrides (highest priority — for known admin accounts)
-  const exactMap = {
-    // 'superadmin@smarthr.com': 'super_admin',  // add your exact emails here
-  };
-  if (exactMap[lower]) return exactMap[lower];
+  // ── 1. DOMAIN RULES (highest priority — your institution/company domains) ──
+  // Any email ending in @suh.edu.in or @suh.edu → Super Admin
+  if (domain === 'suh.edu.in' || domain === 'suh.edu') return 'super_admin';
 
-  // 2. Username keyword matching
-  if (/^(superadmin|root|admin\.hr|hradmin)/.test(username))  return 'super_admin';
-  if (/^(hr|hrmgr|hrmanager|humanresource)/.test(username))   return 'hr_manager';
+  // Add more domain rules here as needed:
+  // if (domain === 'hr.yourcompany.com')      return 'hr_manager';
+  // if (domain === 'payroll.yourcompany.com') return 'payroll_admin';
+
+  // ── 2. USERNAME PREFIX RULES ──
+  if (/^(superadmin|hradmin|admin\.hr|root)/.test(username))  return 'super_admin';
+  if (/^(hr|hrmanager|hrmgr|humanresource)/.test(username))   return 'hr_manager';
   if (/^(payroll|salary|accounts|finance)/.test(username))    return 'payroll_admin';
   if (/^(recruit|talent|hiring|ta\.)/.test(username))         return 'recruiter';
   if (/^(manager|mgr|hod|lead|head\.)/.test(username))        return 'manager';
 
-  // 3. Domain keyword matching (company sub-domains or department domains)
-  if (/^(admin|hr)\./i.test(domain))                          return 'hr_manager';
-  if (/^payroll\./i.test(domain))                             return 'payroll_admin';
-  if (/^recruit\./i.test(domain))                             return 'recruiter';
-
-  // 4. Default — all other verified company emails = employee
+  // ── 3. DEFAULT — all other emails ──
   return 'employee';
 }
 
-// Live role preview as user types email (login screen)
+// Live role preview while user types email on Sign In tab
 function previewLoginRole(email) {
-  const preview   = document.getElementById('login-role-preview');
-  const roleLabel = document.getElementById('login-role-label');
+  const preview = document.getElementById('login-role-preview');
+  const label   = document.getElementById('login-role-label');
+  if (!preview || !label) return;
   if (!email || !email.includes('@')) { preview.style.display = 'none'; return; }
   const role = detectRoleFromEmail(email);
   const meta = ROLES[role] || ROLES.employee;
-  roleLabel.textContent = meta.icon + ' ' + meta.label;
+  label.textContent    = meta.icon + ' ' + meta.label;
   preview.style.display = 'block';
 }
 
-// Live role preview as user types email (register screen)
+// Live role preview while user types email on Register tab
 function previewRegisterRole(email) {
-  const preview   = document.getElementById('reg-role-preview');
-  const roleLabel = document.getElementById('reg-role-label');
+  const preview = document.getElementById('reg-role-preview');
+  const label   = document.getElementById('reg-role-label');
+  if (!preview || !label) return;
   if (!email || !email.includes('@')) { preview.style.display = 'none'; return; }
   const role = detectRoleFromEmail(email);
   const meta = ROLES[role] || ROLES.employee;
-  roleLabel.textContent = meta.icon + ' ' + meta.label;
+  label.textContent    = meta.icon + ' ' + meta.label;
   preview.style.display = 'block';
 }
 

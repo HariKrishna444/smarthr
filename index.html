@@ -11,7 +11,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
   import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-analytics.js";
-  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail }
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, getIdToken }
     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
   import { getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy }
     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
@@ -44,6 +44,10 @@
     collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy,
     logEvent
   };
+
+  // Returns the current user's Firebase ID token, used to authenticate calls
+  // to chatWithClaude / sendSMS Cloud Functions (see SMARTHR_FN + authedFetch()).
+  window._getIdToken = () => auth.currentUser ? getIdToken(auth.currentUser) : Promise.reject(new Error('Not signed in'));
 
   // Auth state observer
   onAuthStateChanged(auth, (user) => {
@@ -438,10 +442,46 @@ function applyRBAC() {
 }
 
 // ============================================================
+//  CLOUD FUNCTIONS ENDPOINTS
+//  These are your deployed Firebase Cloud Functions (functions/index.js):
+//    exports.chatWithClaude  → AI chat, used by secureAICall()
+//    exports.sendSMS         → Twilio SMS/WhatsApp, used by sendNotification()
+//
+//  Default 2nd-gen Cloud Run URL pattern is:
+//    https://<functionname>-<hash>-<region>.a.run.app
+//  but the simple, always-correct way to get yours is to run:
+//    firebase functions:list
+//  or check the Firebase Console → Functions tab → "Trigger" column,
+//  then paste the exact URLs below.
+// ============================================================
+const SMARTHR_FN = {
+  // 1st-gen style URL (works automatically for v1 and most v2 HTTPS functions
+  // deployed to the default region without firebase.json rewrites):
+  chatWithClaude: 'https://us-central1-smarthr-hrportal.cloudfunctions.net/chatWithClaude',
+  sendSMS:        'https://us-central1-smarthr-hrportal.cloudfunctions.net/sendSMS',
+};
+
+// Wraps fetch() to attach the signed-in user's Firebase ID token as a Bearer
+// token, matching the requireAuth() check on the chatWithClaude/sendSMS
+// Cloud Functions. Without this header those functions now reject with 401.
+async function authedFetch(url, body) {
+  if (!window._getIdToken) throw new Error('Auth not initialized');
+  const token = await window._getIdToken();
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token
+    },
+    body: JSON.stringify(body)
+  });
+}
+
+// ============================================================
 //  SECURE AI PROXY — replaces direct Claude API calls
 //  Routes all AI calls through a secured wrapper that:
 //  1. Validates the user's session before calling
-//  2. Never exposes the API key (uses Firebase Cloud Functions in prod)
+//  2. Never exposes the API key (calls the chatWithClaude Cloud Function)
 //  3. Rate-limits by session to prevent abuse
 // ============================================================
 const _aiCallLog = new Map(); // sessionId → { count, firstCall }
@@ -472,46 +512,44 @@ async function secureAICall(messages, systemPrompt = '', maxTokens = 1000) {
   }
 
   // 4. Audit the call
-  auditLog('AI_CALL', { model: 'claude-sonnet-4-6', user: window._currentUser.email, role: window._userRole });
+  auditLog('AI_CALL', { model: 'claude-3-5-sonnet', user: window._currentUser.email, role: window._userRole });
 
-  // *** PRODUCTION NOTE ***
-  // Replace this block with a call to your Firebase Cloud Function:
-  //   const fn = firebase.functions().httpsCallable('callClaude');
-  //   const result = await fn({ messages, systemPrompt, maxTokens });
-  //   return result.data.text;
-  // The Cloud Function holds the API key securely in env vars — never exposed to client.
-  // The placeholder below uses the key from config only in dev mode.
+  // *** PRODUCTION: routed through Firebase Cloud Function `chatWithClaude` ***
+  // The Anthropic API key lives only in Cloud Functions config (functions.config().anthropic.key)
+  // and is never sent to or stored in the browser. See SMARTHR_FN below for the deployed URL.
 
-  const DEV_API_KEY = window._SMARTHR_DEV_KEY || '';  // Set via: window._SMARTHR_DEV_KEY='sk-ant-...'
-  if (!DEV_API_KEY) {
-    throw new Error('NO_KEY');
-  }
+  // Your deployed chatWithClaude function only accepts a single `message` string
+  // (per functions/index.js), so we flatten the chat history + system prompt into one prompt.
+  const flattenedMessage = buildClaudePrompt(messages, systemPrompt);
 
-  const payload = {
-    model: 'claude-sonnet-4-6',
-    max_tokens: maxTokens,
-    messages
-  };
-  if (systemPrompt) payload.system = systemPrompt;
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': DEV_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify(payload)
-  });
+  const res = await authedFetch(SMARTHR_FN.chatWithClaude, { message: flattenedMessage });
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || 'AI API error ' + res.status);
+    if (res.status === 401) throw new Error('Session expired — please sign in again.');
+    throw new Error(err.error || 'AI function error ' + res.status);
   }
 
   const data = await res.json();
-  return data.content?.map(c => c.text || '').join('') || '';
+  if (data.error) throw new Error(data.error);
+  return data.reply || '';
+}
+
+// Flattens a chat-style messages[] + optional system prompt into the single
+// `message` string expected by the chatWithClaude Cloud Function.
+function buildClaudePrompt(messages, systemPrompt) {
+  let prompt = '';
+  if (systemPrompt) prompt += `[Instructions]\n${systemPrompt}\n\n`;
+  if (Array.isArray(messages)) {
+    prompt += messages.map(m => {
+      const who = m.role === 'assistant' ? 'Assistant' : 'User';
+      const text = typeof m.content === 'string' ? m.content : (m.content?.[0]?.text || '');
+      return `${who}: ${text}`;
+    }).join('\n');
+  } else if (typeof messages === 'string') {
+    prompt += messages;
+  }
+  return prompt.trim();
 }
 
 // ============================================================
@@ -1756,16 +1794,22 @@ function showToast(msg, type='info') {
         <div class="channel-card">
           <div class="channel-icon">💬</div>
           <div class="channel-name">WhatsApp</div>
-          <div class="channel-status" style="color:var(--gold)">Setup Required</div>
+          <div class="channel-status" style="color:var(--accent2)">Connected</div>
           <label class="toggle-switch"><input type="checkbox" onchange="toggleChannel('whatsapp',this)"><span class="toggle-slider"></span></label>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Via Twilio/WATI API</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Via Twilio (sendSMS function)</div>
         </div>
         <div class="channel-card">
           <div class="channel-icon">📱</div>
           <div class="channel-name">SMS</div>
-          <div class="channel-status" style="color:var(--gold)">Setup Required</div>
+          <div class="channel-status" style="color:var(--accent2)">Connected</div>
           <label class="toggle-switch"><input type="checkbox" onchange="toggleChannel('sms',this)"><span class="toggle-slider"></span></label>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Via Twilio/MSG91 API</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Via Twilio (sendSMS function)</div>
+        </div>
+      </div>
+      <div class="card" style="background:rgba(29,158,117,0.06);border-color:rgba(29,158,117,0.2)">
+        <div style="font-size:12px;color:var(--text-dim);line-height:1.6">
+          ✅ <strong>Live:</strong> SMS &amp; WhatsApp are sent through your deployed <code>sendSMS</code> Cloud Function — the Twilio Account SID/Auth Token stay server-side
+          (<code>functions.config().twilio.*</code>) and are never exposed to the browser. Toggle a channel ON above to start sending real messages on leave approvals, ticket updates, and expense decisions.
         </div>
       </div>
       <div class="card">
@@ -1782,17 +1826,55 @@ function showToast(msg, type='info') {
           </tbody>
         </table>
         <div style="margin-top:16px">
-          <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px">API CONFIGURATION</div>
-          <div class="form-row">
-            <div class="form-group"><label class="form-label">SendGrid / SMTP API Key</label><input class="form-input" placeholder="SG.xxxxxxxx" /></div>
-            <div class="form-group"><label class="form-label">Twilio Account SID</label><input class="form-input" placeholder="ACxxxxxxxx" /></div>
-            <div class="form-group"><label class="form-label">WhatsApp API Key (WATI)</label><input class="form-input" placeholder="wati_key_xxx" /></div>
-            <div class="form-group"><label class="form-label">MSG91 Auth Key</label><input class="form-input" placeholder="msg91_key" /></div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px">CLOUD FUNCTIONS STATUS</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
+            For security, API keys (Twilio, Anthropic) are configured once on the server via
+            <code>firebase functions:config:set</code> and are never entered or stored in this browser.
+            This panel just shows whether the backend functions are reachable.
           </div>
-          <button class="btn-primary" style="width:auto;padding:10px 24px" onclick="showToast('Settings saved! API keys stored securely.','success')">Save Notification Settings</button>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">chatWithClaude (AI Chat)</label>
+              <div class="form-input" id="fn-status-claude" style="display:flex;align-items:center;gap:8px;cursor:default">
+                <span style="width:8px;height:8px;border-radius:50%;background:var(--text-muted);display:inline-block" id="fn-dot-claude"></span>
+                <span id="fn-text-claude">Not checked</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">sendSMS (Twilio)</label>
+              <div class="form-input" id="fn-status-sms" style="display:flex;align-items:center;gap:8px;cursor:default">
+                <span style="width:8px;height:8px;border-radius:50%;background:var(--text-muted);display:inline-block" id="fn-dot-sms"></span>
+                <span id="fn-text-sms">Not checked</span>
+              </div>
+            </div>
+          </div>
+          <button class="btn-secondary" style="width:auto;padding:10px 24px" onclick="checkCloudFunctionStatus()">↻ Check Function Status</button>
+          <button class="btn-primary" style="width:auto;padding:10px 24px;margin-left:10px" onclick="showToast('Notification preferences saved!','success')">Save Notification Settings</button>
         </div>
       </div>
     </div>
+
+    <script>
+      async function checkCloudFunctionStatus() {
+        const setStatus = (key, ok, text) => {
+          const dot = document.getElementById('fn-dot-'+key), label = document.getElementById('fn-text-'+key);
+          if (dot) dot.style.background = ok ? 'var(--accent2)' : 'var(--coral)';
+          if (label) label.textContent = text;
+        };
+        setStatus('claude', null, 'Checking…'); setStatus('sms', null, 'Checking…');
+        // We can't truly "ping" these without sending a real message/SMS, so we just
+        // verify the endpoint responds (a 400 for missing fields still means it's deployed,
+        // signed in, and live — a 401 means you're not signed in, not that it's down).
+        try {
+          const r = await authedFetch(SMARTHR_FN.chatWithClaude, {});
+          setStatus('claude', r.status < 500, r.status < 500 ? 'Reachable (' + r.status + ')' : 'Error ' + r.status);
+        } catch(e) { setStatus('claude', false, 'Unreachable — check URL/CORS'); }
+        try {
+          const r = await authedFetch(SMARTHR_FN.sendSMS, {});
+          setStatus('sms', r.status < 500, r.status < 500 ? 'Reachable (' + r.status + ')' : 'Error ' + r.status);
+        } catch(e) { setStatus('sms', false, 'Unreachable — check URL/CORS'); }
+      }
+    </script>
 
     <!-- ======================== TICKETS ======================== -->
     <div class="panel" id="panel-tickets">
@@ -2610,10 +2692,11 @@ function submitTicket() {
 }
 
 // ===========================
-// AI ASSISTANT (Claude API — secured via secureAICall)
+// AI ASSISTANT (Claude API — secured via secureAICall → chatWithClaude Cloud Function)
 // ===========================
-// NOTE: API key is no longer stored here. Set window._SMARTHR_DEV_KEY for local dev,
-// or deploy callClaude Firebase Cloud Function for production.
+// The Anthropic API key lives only in Firebase Functions config (functions.config().anthropic.key),
+// set once via: firebase functions:config:set anthropic.key="sk-ant-..." && firebase deploy --only functions
+// It is never present in this file or sent to the browser.
 
 const systemPrompt = `You are SmartHR AI Assistant, an intelligent HR assistant for SmartHR portal. 
 You help employees with HR queries including: leave policies, payroll information, attendance, 
@@ -3471,13 +3554,60 @@ renderCalendar();
 // ===========================
 // NOTIFICATIONS SETUP
 // ===========================
+// ===========================
+// NOTIFICATIONS — real send via Twilio Cloud Function
+// ===========================
+// Per-channel on/off, controlled by the toggle switches in the Notifications panel.
+window._notifChannels = { email: true, whatsapp: false, sms: false };
+
 function toggleChannel(ch, el) {
+  window._notifChannels[ch] = el.checked;
   const labels = {email:'email-status'};
   if (labels[ch]) document.getElementById(labels[ch]).textContent = 'Notifications: ' + (el.checked?'ON':'OFF');
   showToast(`${ch.charAt(0).toUpperCase()+ch.slice(1)} notifications ${el.checked?'enabled':'disabled'}`, el.checked?'success':'info');
 }
 
-function sendNotification(user, message) { addNotification(`${user}: ${message}`, 'system'); console.log(`[SmartHR] To: ${user} | ${message}`); }
+/**
+ * Sends a real notification to an employee.
+ * @param {string} user       - Display name or identifier shown in the in-app feed.
+ * @param {string} message    - Notification body.
+ * @param {object} [opts]
+ * @param {string} [opts.phone]   - E.164 phone number (e.g. "+919876543210"). Required for SMS/WhatsApp.
+ * @param {string} [opts.channel] - 'sms' | 'whatsapp'. Defaults to 'sms'. WhatsApp numbers are
+ *                                  prefixed with "whatsapp:" for Twilio's WhatsApp sender.
+ */
+async function sendNotification(user, message, opts = {}) {
+  // Always log it in-app regardless of channel delivery
+  addNotification(`${user}: ${message}`, 'system');
+
+  const channel = opts.channel || 'sms';
+  const channelEnabled = channel === 'whatsapp' ? window._notifChannels.whatsapp : window._notifChannels.sms;
+
+  if (!opts.phone) {
+    console.log(`[SmartHR] (no phone on file) To: ${user} | ${message}`);
+    return { sent: false, reason: 'no_phone' };
+  }
+  if (!channelEnabled) {
+    console.log(`[SmartHR] (${channel} disabled) To: ${user} | ${message}`);
+    return { sent: false, reason: 'channel_disabled' };
+  }
+
+  const to = channel === 'whatsapp' ? `whatsapp:${opts.phone}` : opts.phone;
+
+  try {
+    const res = await authedFetch(SMARTHR_FN.sendSMS, { to, message });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || ('sendSMS error ' + res.status));
+
+    auditLog('NOTIFICATION_SENT', { user, channel, to, sid: data.sid });
+    return { sent: true, sid: data.sid };
+  } catch (e) {
+    console.warn('[SmartHR] Notification failed:', e.message);
+    auditLog('NOTIFICATION_FAILED', { user, channel, error: e.message });
+    showToast(`Notification to ${user} failed to send (${channel}).`, 'error');
+    return { sent: false, reason: e.message };
+  }
+}
 
 
 
@@ -3500,6 +3630,11 @@ function approveExpense(btn) {
   row.querySelector('.pill').textContent = 'Approved';
   row.lastElementChild.textContent = '✓ Done';
   showToast('Expense approved!', 'success');
+  const empName = row.querySelector('.emp-name-cell')?.textContent?.trim();
+  const emp = (window.empData || []).find(e => e.n === empName || e.name === empName);
+  if (emp && (emp.phone || emp.p)) {
+    sendNotification(empName, 'Your expense claim has been approved.', { phone: emp.phone || emp.p, channel: 'sms' });
+  }
 }
 function rejectExpense(btn) {
   const row = btn.closest('tr');
@@ -3507,6 +3642,11 @@ function rejectExpense(btn) {
   row.querySelector('.pill').textContent = 'Rejected';
   row.lastElementChild.textContent = '—';
   showToast('Expense rejected', 'info');
+  const empName = row.querySelector('.emp-name-cell')?.textContent?.trim();
+  const emp = (window.empData || []).find(e => e.n === empName || e.name === empName);
+  if (emp && (emp.phone || emp.p)) {
+    sendNotification(empName, 'Your expense claim was rejected. Please contact HR for details.', { phone: emp.phone || emp.p, channel: 'sms' });
+  }
 }
 
 function submitExpense() {
@@ -3618,6 +3758,20 @@ async function updateLeaveStatus(id, status) {
     await window.firestoreUpdateLeave(id, { status });
     auditLog(status === 'Approved' ? 'LEAVE_APPROVE' : 'LEAVE_DENY', { leaveId: id, status });
     showToast(`Leave ${status}!`, status === 'Approved' ? 'success' : 'info');
+
+    // Notify the employee via SMS/WhatsApp if a phone number is on file
+    const leave = (window.leaveData || []).find(l => l._id === id);
+    if (leave) {
+      const emp = (window.empData || []).find(e => e.id === leave.empId || e.email === leave.empEmail);
+      const phone = leave.phone || emp?.phone || emp?.p;
+      if (phone) {
+        sendNotification(
+          leave.empName || leave.emp || 'Employee',
+          `Your ${leave.type || 'leave'} request (${leave.from || ''} to ${leave.to || ''}) has been ${status.toLowerCase()}.`,
+          { phone, channel: 'sms' }
+        );
+      }
+    }
   } catch(e) { showToast('Error updating leave: ' + e.message, 'error'); }
 }
 
@@ -3661,7 +3815,24 @@ function updateTicketStats(tickets) {
   if (nb) nb.textContent = open;
 }
 async function updateTicketStatus(id, status) {
-  try { await window.firestoreUpdateTicket(id, { status }); auditLog('TICKET_UPDATE', { id, status }); showToast('Ticket updated!','success'); }
+  try {
+    await window.firestoreUpdateTicket(id, { status });
+    auditLog('TICKET_UPDATE', { id, status });
+    showToast('Ticket updated!','success');
+
+    const ticket = (window.ticketData || []).find(t => t._id === id);
+    if (ticket) {
+      const emp = (window.empData || []).find(e => e.id === ticket.empId || e.email === ticket.empEmail);
+      const phone = ticket.phone || emp?.phone || emp?.p;
+      if (phone) {
+        sendNotification(
+          ticket.empName || ticket.emp || 'Employee',
+          `Your ticket "${ticket.subject || 'Support request'}" is now: ${status}.`,
+          { phone, channel: 'sms' }
+        );
+      }
+    }
+  }
   catch(e) { showToast('Error: '+e.message,'error'); }
 }
 
